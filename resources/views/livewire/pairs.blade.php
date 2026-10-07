@@ -63,7 +63,7 @@
                                     <button type="button" wire:click="cancelEditing" class="btn-ghost px-3 py-1.5">Cancelar</button>
                                 </form>
                             @else
-                            <span @class(['flex-1 text-sm font-medium', 'text-stone-400 line-through' => $pair->isWithdrawn()])>{{ $pair->name }}</span>
+                            <span @class(['min-w-0 flex-1 basis-48 text-sm leading-snug font-medium break-words', 'text-stone-400 line-through' => $pair->isWithdrawn()])>{{ $pair->name }}</span>
                             @if ($pair->isWithdrawn())
                                 <span class="badge bg-red-50 text-red-700">Retirada {{ $pair->withdrawn_at->format('H:i') }}</span>
                             @endif

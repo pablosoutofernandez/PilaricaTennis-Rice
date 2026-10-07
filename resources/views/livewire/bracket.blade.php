@@ -15,7 +15,7 @@
                 <span class="grid size-14 place-items-center rounded-full bg-ball-300 text-3xl shadow-inner">🏆</span>
                 <div>
                     <p class="text-xs font-semibold tracking-wide text-brand-600 uppercase">Campeones</p>
-                    <p class="text-2xl font-bold text-stone-900">{{ $champion->name }}<x-pair-number :pair="$champion" /></p>
+                    <p class="text-xl leading-snug font-bold break-words text-stone-900 md:text-2xl">{{ $champion->name }}<x-pair-number :pair="$champion" /></p>
                 </div>
             </div>
         @endif
@@ -39,7 +39,7 @@
                         <span class="grid size-12 place-items-center rounded-full bg-ball-300 text-2xl">🏆</span>
                         <div>
                             <p class="text-xs font-semibold tracking-wide text-ball-600 uppercase">Campeón de consolación</p>
-                            <p class="text-xl font-bold text-stone-900">{{ $consolationChampion->name }}<x-pair-number :pair="$consolationChampion" /></p>
+                            <p class="text-lg leading-snug font-bold break-words text-stone-900 md:text-xl">{{ $consolationChampion->name }}<x-pair-number :pair="$consolationChampion" /></p>
                         </div>
                     </div>
                 @endif

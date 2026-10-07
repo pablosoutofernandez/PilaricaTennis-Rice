@@ -8,7 +8,22 @@
     $heading = $tone === 'ball' ? 'bg-ball-100 text-ball-700' : 'bg-brand-100 text-brand-800';
     $previousSlots = null;
 @endphp
-<div class="overflow-x-auto pb-4">
+{{-- En el móvil: ronda a ronda, de arriba abajo --}}
+<div class="space-y-5 md:hidden">
+    @foreach ($rounds as $size => $round)
+        <section wire:key="{{ $key }}-list-{{ $size }}">
+            <h3 class="mb-2 rounded-xl px-3 py-1.5 text-sm font-bold {{ $heading }}">{{ $round['name'] }}</h3>
+            <div class="space-y-2">
+                @foreach (array_filter($round['slots']) as $m)
+                    @include('partials.bracket-match', ['m' => $m, 'keyPrefix' => 'list-'])
+                @endforeach
+            </div>
+        </section>
+    @endforeach
+</div>
+
+{{-- En pantallas grandes: llaves --}}
+<div class="hidden overflow-x-auto pb-4 md:block">
     <div class="flex min-w-max gap-6">
         @foreach ($rounds as $size => $round)
             @php $isLastRound = $loop->last; @endphp

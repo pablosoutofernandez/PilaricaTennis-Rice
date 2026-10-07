@@ -1,7 +1,7 @@
 <div @class([
         'card overflow-hidden text-sm',
         'ring-2 ring-ball-400' => $m->status === 'playing',
-    ]) wire:key="ko-{{ $m->id }}">
+    ]) wire:key="ko-{{ $keyPrefix ?? '' }}{{ $m->id }}">
     @if ($editing === $m->id)
         @include('partials.result-form')
     @else
@@ -12,7 +12,7 @@
                 'bg-brand-50 font-bold text-stone-900' => $m->winner_id && $m->winner_id === $pairId,
                 'text-stone-400' => $m->winner_id && $m->winner_id !== $pairId,
             ])>
-            <span @class(['flex-1 truncate', 'line-through' => $pair?->isWithdrawn()])>{{ $pair?->name ?? 'Por decidir' }}<x-pair-number :pair="$pair" /></span>
+            <span @class(['min-w-0 flex-1 leading-snug break-words md:truncate', 'line-through' => $pair?->isWithdrawn()])>{{ $pair?->name ?? 'Por decidir' }}<x-pair-number :pair="$pair" /></span>
             @if ($m->status === 'finished' && $m->walkover)
                 @if ($m->winner_id !== $pairId)
                     <span class="text-xs font-bold text-red-600">W.O.</span>

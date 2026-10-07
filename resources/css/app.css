@@ -1,0 +1,62 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+
+    /* Naranja claro: color principal */
+    --color-brand-50: #fff8f1;
+    --color-brand-100: #ffeedd;
+    --color-brand-200: #ffd9b3;
+    --color-brand-300: #ffbe85;
+    --color-brand-400: #ff9f52;
+    --color-brand-500: #f9822b;
+    --color-brand-600: #e3691a;
+    --color-brand-700: #b85114;
+    --color-brand-800: #8a3d12;
+
+    /* Amarillo pelota de tenis: detalles */
+    --color-ball-100: #fbfdd0;
+    --color-ball-300: #eef56a;
+    --color-ball-400: #e2ec2f;
+    --color-ball-600: #9aa312;
+}
+
+@utility card {
+    @apply rounded-2xl border border-brand-100 bg-white shadow-sm shadow-brand-100/60;
+}
+@utility btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition
+        disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer;
+}
+@utility btn-primary {
+    @apply btn bg-brand-500 text-white hover:bg-brand-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500;
+}
+@utility btn-soft {
+    @apply btn bg-brand-100 text-brand-800 hover:bg-brand-200;
+}
+@utility btn-ghost {
+    @apply btn text-brand-700 hover:bg-brand-50;
+}
+@utility btn-ball {
+    @apply btn bg-ball-300 text-stone-800 hover:bg-ball-400;
+}
+@utility input {
+    @apply w-full rounded-xl border border-brand-200 bg-white px-3 py-2 text-sm text-stone-800
+        placeholder:text-stone-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-200 focus:outline-none;
+}
+@utility label {
+    @apply mb-1 block text-xs font-semibold tracking-wide text-stone-500 uppercase;
+}
+@utility badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+}
+@utility score-input {
+    @apply h-12 w-14 rounded-xl border-2 border-brand-200 bg-white text-center text-2xl font-bold text-stone-800
+        focus:border-brand-500 focus:outline-none;
+}
+
+[x-cloak] { display: none !important; }

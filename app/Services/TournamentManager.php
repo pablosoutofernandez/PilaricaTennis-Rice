@@ -12,22 +12,20 @@ use Illuminate\Validation\ValidationException;
 
 class TournamentManager
 {
-    public function __construct(private FormatPlanner $planner) {}
-
     /* ------------------------------------------------------------------
      |  Inicio: sorteo de grupos y calendario
      * ------------------------------------------------------------------ */
 
+    /** Se puede empezar aunque la estimación se pase del horario: decide quien organiza. */
     public function start(Tournament $tournament): void
     {
         $proposal = $tournament->proposal();
         $startGroups = $tournament->start_games_groups ?? $proposal['start_games'] ?? 0;
         $startKnockout = $tournament->start_games_knockout ?? $proposal['start_games_knockout'] ?? 0;
-        $fitsTime = $proposal && $this->planner->estimate($proposal, $startGroups, $startKnockout) <= $tournament->availableMinutes();
 
-        if (! $tournament->isRegistration() || ! $proposal || ! $proposal['fits'] || ! $fitsTime) {
+        if (! $tournament->isRegistration() || ! $proposal) {
             throw ValidationException::withMessages([
-                'start' => 'La propuesta no cabe en el horario disponible o no hay suficientes parejas.',
+                'start' => 'No hay suficientes parejas para empezar.',
             ]);
         }
 
@@ -72,8 +70,25 @@ class TournamentManager
             }
         }
 
+        $byGroup = [];
         foreach ($ordered->values() as $k => $pair) {
-            $pair->update(['group_id' => $groups[$slots[$k]]->id]);
+            $byGroup[$slots[$k]][] = $pair;
+        }
+
+        // Sorteo entre todas las parejas: último desempate cuando todo lo demás es igual.
+        $drawPositions = $pairs->shuffle()->values()->mapWithKeys(fn (Pair $pair, int $index) => [$pair->id => $index + 1]);
+
+        // Números seguidos por grupo (A: 1-4, B: 5-8...) y, dentro de cada grupo, al azar.
+        $number = 0;
+        ksort($byGroup);
+        foreach ($byGroup as $groupIndex => $groupPairs) {
+            foreach (collect($groupPairs)->shuffle() as $pair) {
+                $pair->update([
+                    'group_id' => $groups[$groupIndex]->id,
+                    'number' => ++$number,
+                    'draw_position' => $drawPositions[$pair->id],
+                ]);
+            }
         }
 
         return $groups;
@@ -170,6 +185,7 @@ class TournamentManager
 
         $rows = $pairs->mapWithKeys(fn (Pair $pair) => [$pair->id => [
             'pair' => $pair, 'played' => 0, 'won' => 0, 'lost' => 0, 'gf' => 0, 'ga' => 0, 'diff' => 0,
+            'withdrawn' => $pair->isWithdrawn(),
         ]])->all();
 
         foreach ($matches as $m) {
@@ -182,24 +198,60 @@ class TournamentManager
             }
         }
 
-        // 1º victorias, 2º diferencia de juegos, 3º juegos a favor
-        usort($rows, fn ($a, $b) => [$b['won'], $b['diff'], $b['gf']] <=> [$a['won'], $a['diff'], $a['gf']]);
+        // Las retiradas al final; el resto por victorias y, a igualdad, con los desempates.
+        $ordered = collect($rows)
+            ->groupBy(fn ($row) => ($row['withdrawn'] ? 1 : 0).'|'.str_pad((string) (999 - $row['won']), 3, '0', STR_PAD_LEFT))
+            ->sortKeys()
+            ->flatMap(fn (Collection $tied) => $this->breakTie($tied, $matches));
 
-        // Empate a victorias entre exactamente dos parejas: decide el enfrentamiento directo.
-        $byWins = collect($rows)->countBy('won');
-        for ($i = 0; $i < count($rows) - 1; $i++) {
-            [$row, $next] = [$rows[$i], $rows[$i + 1]];
-            if ($next['won'] === $row['won'] && $byWins[$row['won']] === 2) {
-                $h2h = $matches->first(fn ($m) => in_array($m->pair1_id, [$row['pair']->id, $next['pair']->id])
-                    && in_array($m->pair2_id, [$row['pair']->id, $next['pair']->id]));
-                if ($h2h && $h2h->winner_id === $next['pair']->id) {
-                    [$rows[$i], $rows[$i + 1]] = [$next, $row];
-                }
-                $i++;
-            }
+        return $ordered->values()->map(fn ($row, $i) => $row + ['position' => $i + 1]);
+    }
+
+    /**
+     * Desempate entre parejas con las mismas victorias: entre dos, el partido que jugaron;
+     * entre más, diferencia de juegos y juegos a favor, y si quedan dos igualadas, su partido.
+     * Si todo coincide, decide el sorteo hecho al empezar el torneo.
+     *
+     * @param  Collection<int, array>  $tied
+     * @param  Collection<int, TennisMatch>  $matches  partidos terminados del grupo
+     * @return Collection<int, array>
+     */
+    private function breakTie(Collection $tied, Collection $matches): Collection
+    {
+        if ($tied->count() === 2) {
+            return $this->headToHead($tied, $matches)
+                ?? $tied->sortBy(fn ($row) => [-$row['diff'], -$row['gf'], $this->drawPosition($row['pair'])]);
         }
 
-        return collect($rows)->values()->map(fn ($row, $i) => $row + ['position' => $i + 1]);
+        return $tied->sortBy(fn ($row) => [-$row['diff'], -$row['gf']])
+            ->groupBy(fn ($row) => $row['diff'].'|'.$row['gf'], preserveKeys: false)
+            ->flatMap(fn (Collection $stillTied) => ($stillTied->count() === 2 ? $this->headToHead($stillTied, $matches) : null)
+                ?? $stillTied->sortBy(fn ($row) => $this->drawPosition($row['pair'])));
+    }
+
+    /**
+     * Las dos parejas ordenadas por el partido que jugaron entre ellas, o null si aún no lo han jugado.
+     *
+     * @param  Collection<int, array>  $two
+     * @param  Collection<int, TennisMatch>  $matches
+     */
+    private function headToHead(Collection $two, Collection $matches): ?Collection
+    {
+        [$first, $second] = $two->values()->all();
+        $ids = [$first['pair']->id, $second['pair']->id];
+        $match = $matches->first(fn (TennisMatch $m) => in_array($m->pair1_id, $ids) && in_array($m->pair2_id, $ids));
+
+        if (! $match) {
+            return null;
+        }
+
+        return collect($match->winner_id === $first['pair']->id ? [$first, $second] : [$second, $first]);
+    }
+
+    /** Puesto en el sorteo; las parejas de antes de existir el sorteo, por orden de alta. */
+    private function drawPosition(Pair $pair): int
+    {
+        return $pair->draw_position ?? $pair->id;
     }
 
     /* ------------------------------------------------------------------
@@ -245,6 +297,7 @@ class TournamentManager
             ->values();
 
         return $tournament->pairs()->with('group')->whereIn('id', $pairIds)
+            ->whereNull('withdrawn_at')
             ->orderBy('id')->get()
             ->map(fn (Pair $pair, int $index) => [
                 'pair' => $pair,
@@ -348,8 +401,8 @@ class TournamentManager
     }
 
     /**
-     * Todas las parejas ordenadas por puesto de grupo. Entre grupos de distinto tamaño
-     * se compara por % de victorias y diferencia de juegos por partido.
+     * Todas las parejas que siguen en el torneo ordenadas por puesto de grupo. Entre grupos
+     * de distinto tamaño se compara por % de victorias y diferencia de juegos por partido.
      *
      * @return array<int, array{pair: Pair, group: string, position: int}>
      */
@@ -362,11 +415,12 @@ class TournamentManager
         $tier = function (int $position) use ($standings) {
             return $standings
                 ->map(fn ($rows, $name) => ($rows[$position - 1] ?? null) ? $rows[$position - 1] + ['group' => $name] : null)
-                ->filter()
+                ->filter(fn ($row) => $row && ! $row['withdrawn'])
                 ->sortByDesc(fn ($r) => [
                     $r['played'] ? $r['won'] / $r['played'] : 0,
                     $r['played'] ? $r['diff'] / $r['played'] : 0,
                     $r['played'] ? $r['gf'] / $r['played'] : 0,
+                    -$this->drawPosition($r['pair']),
                 ])
                 ->values();
         };
@@ -470,6 +524,8 @@ class TournamentManager
                 'games2' => $g2,
                 'winner_id' => $winner,
                 'status' => TennisMatch::FINISHED,
+                'walkover' => false,
+                'next_on_court' => null,
                 'finished_at' => $match->finished_at ?? now(),
             ]);
 
@@ -483,6 +539,15 @@ class TournamentManager
             }
         });
 
+        $this->progress($tournament);
+    }
+
+    /**
+     * Tras cualquier cambio en los partidos: genera la fase final y la consolación
+     * cuando toca, cierra el torneo si no queda nada y ocupa las pistas libres.
+     */
+    private function progress(Tournament $tournament): void
+    {
         $tournament->refresh();
 
         if ($tournament->status === Tournament::GROUPS && $this->groupStageFinished($tournament)) {
@@ -567,6 +632,273 @@ class TournamentManager
 
         foreach ($this->dependentMatches($match) as $next) {
             $next->update([$slot => $next->third_place ? $loser : $match->winner_id]);
+            $this->settleWithdrawnPairs($next);
+        }
+    }
+
+    /* ------------------------------------------------------------------
+     |  Imprevistos: W.O., retiradas, parejas tardías y pistas
+     * ------------------------------------------------------------------ */
+
+    /** Una pareja no se presenta o no puede acabar el partido: lo gana la otra. */
+    public function walkover(TennisMatch $match, int $absentPairId): void
+    {
+        if ($match->isFinished() || ! $match->hasBothPairs() || ! in_array($absentPairId, [$match->pair1_id, $match->pair2_id])) {
+            throw ValidationException::withMessages(['walkover' => 'Este partido no se puede dar por W.O.']);
+        }
+
+        DB::transaction(fn () => $this->settleWalkover($match, $absentPairId));
+
+        $this->progress($match->tournament);
+    }
+
+    /**
+     * La pareja se va del torneo: pierde por W.O. el partido que esté jugando y los pendientes,
+     * y deja de contar para la fase final y la consolación. Sus resultados jugados se mantienen.
+     */
+    public function withdraw(Pair $pair): void
+    {
+        $tournament = $pair->tournament;
+
+        if (! in_array($tournament->status, [Tournament::GROUPS, Tournament::KNOCKOUT])) {
+            throw ValidationException::withMessages(['pair' => 'Solo se puede retirar una pareja con el torneo en juego.']);
+        }
+        if ($pair->isWithdrawn()) {
+            return;
+        }
+
+        DB::transaction(function () use ($pair, $tournament) {
+            $pair->update(['withdrawn_at' => now()]);
+
+            $matches = $tournament->matches()
+                ->whereIn('status', [TennisMatch::PENDING, TennisMatch::PLAYING])
+                ->where(fn ($query) => $query->where('pair1_id', $pair->id)->orWhere('pair2_id', $pair->id))
+                ->orderBy('queue_order')
+                ->get();
+
+            foreach ($matches as $match) {
+                // Un W.O. anterior puede haber cerrado ya este partido en cascada.
+                $match->refresh();
+
+                // Si aún no tiene rival, el W.O. se da cuando llegue (ver advance).
+                if (! $match->isFinished() && $match->hasBothPairs()) {
+                    $this->settleWalkover($match, $pair->id);
+                }
+            }
+        });
+
+        $this->progress($tournament);
+    }
+
+    /** Deshace una retirada por error. Solo en grupos: después ya hay cuadro sorteado sin ella. */
+    public function reinstate(Pair $pair): void
+    {
+        $tournament = $pair->tournament;
+
+        if (! $pair->isWithdrawn()) {
+            return;
+        }
+        if ($tournament->status !== Tournament::GROUPS) {
+            throw ValidationException::withMessages(['pair' => 'Solo se puede reincorporar una pareja durante la fase de grupos.']);
+        }
+
+        DB::transaction(function () use ($pair, $tournament) {
+            $tournament->matches()
+                ->where('stage', 'group')
+                ->where('walkover', true)
+                ->where('finished_at', '>=', $pair->withdrawn_at)
+                ->where('winner_id', '!=', $pair->id)
+                ->where(fn ($query) => $query->where('pair1_id', $pair->id)->orWhere('pair2_id', $pair->id))
+                ->get()
+                ->each(fn (TennisMatch $match) => $match->update([
+                    'status' => TennisMatch::PENDING,
+                    'games1' => null,
+                    'games2' => null,
+                    'winner_id' => null,
+                    'walkover' => false,
+                    'court' => null,
+                    'start_games' => null,
+                    'started_at' => null,
+                    'finished_at' => null,
+                ]));
+
+            $pair->update(['withdrawn_at' => null]);
+        });
+
+        $this->fillCourts($tournament);
+    }
+
+    /**
+     * Pareja que llega con los grupos empezados: entra en el grupo con menos parejas y sus
+     * partidos se reparten por la cola para que no los juegue todos seguidos.
+     */
+    public function addLatePair(Tournament $tournament, string $player1, string $player2): Pair
+    {
+        if ($tournament->status !== Tournament::GROUPS) {
+            throw ValidationException::withMessages(['player1' => 'Solo se pueden añadir parejas durante la fase de grupos.']);
+        }
+        if ($tournament->pairs()->count() >= config('torneo.max_pairs')) {
+            throw ValidationException::withMessages(['player1' => 'El máximo es de '.config('torneo.max_pairs').' parejas.']);
+        }
+
+        $pair = DB::transaction(function () use ($tournament, $player1, $player2) {
+            $group = $tournament->groups()
+                ->withCount(['pairs' => fn ($query) => $query->whereNull('withdrawn_at')])
+                ->get()
+                ->sortBy('pairs_count')
+                ->first();
+
+            $pair = $tournament->pairs()->create([
+                'player1' => $player1,
+                'player2' => $player2,
+                'group_id' => $group->id,
+                'number' => (int) $tournament->pairs()->max('number') + 1,
+                'draw_position' => (int) $tournament->pairs()->max('draw_position') + 1,
+            ]);
+            $round = (int) $group->matches()->max('round') + 1;
+
+            $newMatches = $group->pairs()->whereKeyNot($pair->id)->orderBy('id')->get()
+                ->map(fn (Pair $opponent) => $tournament->matches()->make([
+                    'stage' => 'group',
+                    'group_id' => $group->id,
+                    'round' => $round,
+                    'pair1_id' => $opponent->id,
+                    'pair2_id' => $pair->id,
+                    'status' => TennisMatch::PENDING,
+                ]))
+                ->all();
+
+            $queue = $tournament->matches()->where('status', TennisMatch::PENDING)->orderBy('queue_order')->get()->all();
+            $spacing = max(2, intdiv(count($queue), max(1, count($newMatches))));
+            $queueLength = count($queue);
+            foreach (array_reverse($newMatches, true) as $index => $match) {
+                array_splice($queue, min($queueLength, $index * $spacing), 0, [$match]);
+            }
+
+            $base = (int) $tournament->matches()->where('status', '!=', TennisMatch::PENDING)->max('queue_order');
+            foreach ($queue as $index => $match) {
+                $match->queue_order = $base + $index + 1;
+                $match->save();
+            }
+
+            foreach ($newMatches as $match) {
+                $this->settleWithdrawnPairs($match);
+            }
+
+            return $pair;
+        });
+
+        $this->progress($tournament);
+
+        return $pair;
+    }
+
+    /** Pista que no se puede usar (lluvia, avería...): su partido vuelve el primero a la cola. */
+    public function closeCourt(Tournament $tournament, int $court): void
+    {
+        abort_unless($court >= 1 && $court <= $tournament->courts, 422);
+
+        DB::transaction(function () use ($tournament, $court) {
+            $interrupted = $tournament->matches()->where('status', TennisMatch::PLAYING)->where('court', $court)->first();
+            if ($interrupted) {
+                $this->returnToQueue($interrupted);
+            }
+
+            $tournament->update(['closed_courts' => array_values(array_unique([...$tournament->closed_courts ?? [], $court]))]);
+            $tournament->matches()->where('next_on_court', $court)->update(['next_on_court' => null]);
+
+            // Las parejas ya estaban en pista: pasan a ser las siguientes en otra pista abierta.
+            $target = $tournament->openCourts()[0] ?? null;
+            if ($interrupted && $target) {
+                $tournament->matches()->where('next_on_court', $target)->update(['next_on_court' => null]);
+                $interrupted->update(['next_on_court' => $target]);
+            }
+        });
+
+        $this->fillCourts($tournament);
+    }
+
+    public function openCourt(Tournament $tournament, int $court): void
+    {
+        $tournament->update(['closed_courts' => array_values(array_diff($tournament->closed_courts ?? [], [$court]))]);
+
+        $this->fillCourts($tournament);
+    }
+
+    /** Cambia el número de pistas con el torneo en juego. Los partidos de las pistas que sobran vuelven a la cola. */
+    public function changeCourts(Tournament $tournament, int $courts): void
+    {
+        abort_unless($courts >= 1 && $courts <= config('torneo.max_courts'), 422);
+
+        DB::transaction(function () use ($tournament, $courts) {
+            $tournament->matches()->where('status', TennisMatch::PLAYING)->where('court', '>', $courts)
+                ->get()->each(fn (TennisMatch $match) => $this->returnToQueue($match));
+
+            $tournament->update([
+                'courts' => $courts,
+                'closed_courts' => array_values(array_filter($tournament->closed_courts ?? [], fn (int $court) => $court <= $courts)),
+            ]);
+        });
+
+        $this->fillCourts($tournament);
+    }
+
+    /** Partido que se estaba jugando y vuelve a la cola sin perder su sitio. */
+    private function returnToQueue(TennisMatch $match): void
+    {
+        $match->update([
+            'status' => TennisMatch::PENDING,
+            'court' => null,
+            'started_at' => null,
+            'start_games' => null,
+        ]);
+    }
+
+    /**
+     * W.O.: 6 juegos contra el marcador inicial +1 (6-1 empezando 0-0), para no dar
+     * tanta diferencia de juegos sin jugar. Empezando 4-4 sería 6-5, que no existe: 7-5.
+     */
+    private function settleWalkover(TennisMatch $match, int $absentPairId): void
+    {
+        $start = $match->start_games ?? $match->startGames();
+        $winner = $absentPairId === $match->pair1_id ? $match->pair2_id : $match->pair1_id;
+        [$winnerGames, $loserGames] = self::walkoverScore($start);
+
+        $match->update([
+            'games1' => $winner === $match->pair1_id ? $winnerGames : $loserGames,
+            'games2' => $winner === $match->pair2_id ? $winnerGames : $loserGames,
+            'winner_id' => $winner,
+            'status' => TennisMatch::FINISHED,
+            'walkover' => true,
+            'next_on_court' => null,
+            'start_games' => $start,
+            'finished_at' => now(),
+        ]);
+
+        if (! $match->isGroup()) {
+            $this->advance($match);
+        }
+    }
+
+    /** @return array{int, int} juegos del ganador y del perdedor de un W.O. */
+    public static function walkoverScore(int $startGames): array
+    {
+        $loserGames = $startGames + 1;
+
+        return [$loserGames >= 5 ? 7 : 6, $loserGames];
+    }
+
+    /** Si a un partido le llega una pareja retirada, lo gana el rival sin jugar. */
+    private function settleWithdrawnPairs(TennisMatch $match): void
+    {
+        if ($match->status !== TennisMatch::PENDING || ! $match->hasBothPairs()) {
+            return;
+        }
+
+        $withdrawnId = Pair::whereKey([$match->pair1_id, $match->pair2_id])->whereNotNull('withdrawn_at')->value('id');
+
+        if ($withdrawnId) {
+            $this->settleWalkover($match, $withdrawnId);
         }
     }
 
@@ -582,15 +914,59 @@ class TournamentManager
         }
 
         $playing = $tournament->matches()->where('status', TennisMatch::PLAYING)->get();
-        $freeCourts = array_diff(range(1, $tournament->courts), $playing->pluck('court')->all());
+        $freeCourts = array_diff($tournament->openCourts(), $playing->pluck('court')->all());
 
         foreach ($freeCourts as $court) {
             $busy = $this->busyPairIds($tournament);
-            $next = $this->upcoming($tournament)->first(fn ($m) => $this->isReady($m, $busy));
+            $ready = $this->upcoming($tournament)->filter(fn ($m) => $this->isReady($m, $busy));
+
+            // El avisado como siguiente en esta pista; si aún no puede, uno sin pista y, si no, el de otra pista.
+            $next = $ready->firstWhere('next_on_court', $court)
+                ?? $ready->first(fn (TennisMatch $match) => $match->next_on_court === null)
+                ?? $ready->first();
+
+            if ($next) {
+                $this->startOnCourt($next, $court);
+            }
+        }
+
+        $this->assignNextMatches($tournament);
+    }
+
+    /**
+     * Mientras queden partidos, cada pista abierta tiene uno avisado como siguiente. Se evita
+     * avisar a una pareja que está jugando en otra pista o que ya es la siguiente en otra.
+     */
+    private function assignNextMatches(Tournament $tournament): void
+    {
+        $openCourts = $tournament->openCourts();
+        $tournament->matches()->whereNotNull('next_on_court')
+            ->where(fn ($query) => $query->where('status', '!=', TennisMatch::PENDING)->orWhereNotIn('next_on_court', $openCourts))
+            ->update(['next_on_court' => null]);
+
+        $pending = $tournament->matches()->where('status', TennisMatch::PENDING)
+            ->whereNotNull('pair1_id')->whereNotNull('pair2_id')
+            ->orderBy('queue_order')->get();
+        $playing = $tournament->matches()->where('status', TennisMatch::PLAYING)->get()->keyBy('court');
+
+        // Primero la pista que antes empezó su partido: es la que antes quedará libre.
+        $courts = collect($openCourts)->sortBy(fn (int $court) => $playing->get($court)?->started_at?->timestamp ?? 0);
+
+        foreach ($courts as $court) {
+            if ($pending->contains('next_on_court', $court)) {
+                continue;
+            }
+
+            $unavailable = $playing->except($court)->concat($pending->whereNotNull('next_on_court'))
+                ->flatMap(fn (TennisMatch $match) => [$match->pair1_id, $match->pair2_id])->all();
+            $candidates = $pending->whereNull('next_on_court');
+            $next = $candidates->first(fn (TennisMatch $match) => $this->isReady($match, $unavailable)) ?? $candidates->first();
+
             if (! $next) {
                 return;
             }
-            $this->startOnCourt($next, $court);
+
+            $next->update(['next_on_court' => $court]);
         }
     }
 
@@ -637,6 +1013,7 @@ class TournamentManager
             $match->update([
                 'status' => TennisMatch::PENDING,
                 'court' => null,
+                'next_on_court' => null,
                 'started_at' => null,
                 'start_games' => null,
                 'postponed' => $match->postponed + 1,
@@ -674,11 +1051,13 @@ class TournamentManager
         $tournament = $match->tournament;
         $occupied = $tournament->matches()->where('status', TennisMatch::PLAYING)->where('court', $court)->exists();
 
-        if ($occupied || $match->status !== TennisMatch::PENDING || ! $match->hasBothPairs()) {
+        if ($occupied || $tournament->isCourtClosed($court) || $court > $tournament->courts
+            || $match->status !== TennisMatch::PENDING || ! $match->hasBothPairs()) {
             throw ValidationException::withMessages(['court' => 'La pista no está libre o el partido no está listo.']);
         }
 
         $this->startOnCourt($match, $court);
+        $this->assignNextMatches($tournament);
     }
 
     private function startOnCourt(TennisMatch $match, int $court): void
@@ -688,6 +1067,7 @@ class TournamentManager
         $match->update([
             'status' => TennisMatch::PLAYING,
             'court' => $court,
+            'next_on_court' => null,
             'started_at' => now(),
             'start_games' => (int) ($match->isGroup() ? $tournament->start_games_groups : $tournament->start_games_knockout),
         ]);

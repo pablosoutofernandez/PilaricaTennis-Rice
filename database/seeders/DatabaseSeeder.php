@@ -11,15 +11,21 @@ class DatabaseSeeder extends Seeder
     use WithoutModelEvents;
 
     /**
-     * Seed the application's database.
+     * Crea el administrador si aún no existe. Se puede ejecutar en cada despliegue:
+     * nunca cambia la contraseña de un administrador que ya existe.
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        $name = config('torneo.admin.name');
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        if (User::where('name', $name)->exists()) {
+            return;
+        }
+
+        (new User)->forceFill([
+            'name' => $name,
+            'password' => config('torneo.admin.password'),
+            'is_admin' => true,
+        ])->save();
     }
 }

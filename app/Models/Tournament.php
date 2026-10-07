@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use App\Services\FinishEstimator;
 use App\Services\FormatPlanner;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 
 class Tournament extends Model
 {
@@ -27,7 +30,7 @@ class Tournament extends Model
 
     protected $fillable = [
         'name', 'date', 'start_time', 'end_time', 'courts', 'status',
-        'group_sizes', 'qualifiers', 'start_games_groups', 'start_games_knockout', 'consolation_all',
+        'group_sizes', 'qualifiers', 'start_games_groups', 'start_games_knockout', 'consolation_all', 'closed_courts',
     ];
 
     protected function casts(): array
@@ -36,6 +39,7 @@ class Tournament extends Model
             'date' => 'date',
             'group_sizes' => 'array',
             'consolation_all' => 'boolean',
+            'closed_courts' => 'array',
         ];
     }
 
@@ -47,6 +51,32 @@ class Tournament extends Model
     public function groups(): HasMany
     {
         return $this->hasMany(Group::class)->orderBy('name');
+    }
+
+    /** El torneo que se destaca en la portada y en el menú: el que se juega; si no, el próximo; si no, el último. */
+    public static function featured(): ?self
+    {
+        return static::whereIn('status', [self::GROUPS, self::KNOCKOUT])->latest('date')->first()
+            ?? static::where('status', self::REGISTRATION)->oldest('date')->first()
+            ?? static::latest('date')->first();
+    }
+
+    /** Usuarios que pueden organizar este torneo (además del administrador). */
+    public function organizers(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class)->withTimestamps();
+    }
+
+    /**
+     * Nombres de quien organiza, para que el público sepa a quién dirigirse.
+     * Sin organizadores asignados, organiza el administrador.
+     *
+     * @return Collection<int, string>
+     */
+    public function organizerNames(): Collection
+    {
+        return $this->organizers()->pluck('name')
+            ->whenEmpty(fn () => User::where('is_admin', true)->pluck('name'));
     }
 
     public function matches(): HasMany
@@ -62,16 +92,40 @@ class Tournament extends Model
         return max(0, (int) $start->diffInMinutes($end, false));
     }
 
-    /** Propuesta de formato para las parejas inscritas ahora mismo. */
+    /**
+     * Propuesta de formato para las parejas inscritas ahora mismo. Una vez empezado,
+     * la del sorteo, aunque luego se hayan retirado o añadido parejas.
+     */
     public function proposal(): ?array
     {
-        $count = $this->pairs()->count();
+        $count = $this->isRegistration() ? $this->pairs()->count() : (int) array_sum($this->group_sizes ?? []);
 
         if ($count < config('torneo.min_pairs') || $count > config('torneo.max_pairs')) {
             return null;
         }
 
         return app(FormatPlanner::class)->plan($count, $this->availableMinutes(), $this->courts, $this->consolation_all);
+    }
+
+    /**
+     * Hora de fin estimada con lo que queda por jugar, o real si ya ha terminado.
+     *
+     * @return array{finish: \Illuminate\Support\Carbon, scheduled_finish: \Illuminate\Support\Carbon, delay_minutes: int, pace: float, finished: bool, paused: bool, average_minutes: int, average_is_real: bool}|null
+     */
+    public function finishEstimate(): ?array
+    {
+        return app(FinishEstimator::class)->estimate($this);
+    }
+
+    /** @return int[] pistas que se pueden usar ahora mismo */
+    public function openCourts(): array
+    {
+        return array_values(array_diff(range(1, $this->courts), $this->closed_courts ?? []));
+    }
+
+    public function isCourtClosed(int $court): bool
+    {
+        return in_array($court, $this->closed_courts ?? []);
     }
 
     public function statusLabel(): string

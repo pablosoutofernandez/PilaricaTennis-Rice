@@ -2,12 +2,15 @@
 
 namespace App\Livewire;
 
+use App\Livewire\Concerns\EditsResults;
 use App\Models\Tournament;
 use App\Services\TournamentManager;
 use Livewire\Component;
 
 class Groups extends Component
 {
+    use EditsResults;
+
     public Tournament $tournament;
 
     public function render(TournamentManager $manager)

@@ -259,7 +259,7 @@ class FormatPlanner
     }
 
     /** @return int[] partidos reales por ronda, teniendo en cuenta los byes */
-    private function knockoutRoundMatchCounts(int $pairs): array
+    public function knockoutRoundMatchCounts(int $pairs): array
     {
         if ($pairs < 2) {
             return [];

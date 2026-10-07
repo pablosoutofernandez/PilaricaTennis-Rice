@@ -10,7 +10,11 @@
         <div class="mb-4 flex flex-wrap items-center gap-3 text-xs text-stone-500">
             <span class="flex items-center gap-1.5"><span class="size-3 rounded bg-brand-200"></span> Clasificado por posición</span>
             <span class="flex items-center gap-1.5"><span class="size-3 rounded bg-ball-300"></span> Clasificado como mejor de su posición</span>
-            <span>Desempate: victorias → enfrentamiento directo (2 empatados) → diferencia de juegos → juegos a favor</span>
+            <span>Desempate: victorias → enfrentamiento directo → diferencia de juegos → juegos a favor → sorteo</span>
+            @can('manage', $tournament)
+                <span>W.O.: cuenta como 6 a marcador inicial +1 (empezando 0-0, 6-1)</span>
+                <span>Pulsa un resultado para corregirlo</span>
+            @endcan
         </div>
 
         <div class="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -54,7 +58,12 @@
                                             'bg-stone-100 text-stone-400' => ! $isIn,
                                         ])>{{ $row['position'] }}</span>
                                     </td>
-                                    <td class="py-2 font-medium">{{ $row['pair']->name }}</td>
+                                    <td class="py-2 font-medium">
+                                        <span @class(['text-stone-400 line-through' => $row['withdrawn']])>{{ $row['pair']->name }}</span><x-pair-number :pair="$row['pair']" />
+                                        @if ($row['withdrawn'])
+                                            <span class="badge ml-1 bg-red-50 text-red-700">Retirada</span>
+                                        @endif
+                                    </td>
                                     <td class="py-2 text-center text-stone-500">{{ $row['played'] }}</td>
                                     <td class="py-2 text-center font-bold text-brand-700">{{ $row['won'] }}</td>
                                     <td class="py-2 text-center text-stone-500">{{ $row['diff'] > 0 ? '+' : '' }}{{ $row['diff'] }}</td>
@@ -66,16 +75,27 @@
 
                     <ul class="divide-y divide-brand-50 border-t border-brand-100 bg-brand-50/30 text-xs">
                         @foreach ($item['matches'] as $m)
+                            @if ($editing === $m->id)
+                                <li>@include('partials.result-form')</li>
+                                @continue
+                            @endif
                             <li class="flex items-center gap-2 px-4 py-1.5" wire:key="gm-{{ $m->id }}">
-                                <span @class(['flex-1 truncate text-right', 'font-bold text-stone-900' => $m->winner_id === $m->pair1_id, 'text-stone-500' => $m->winner_id !== $m->pair1_id])>{{ $m->pair1->name }}</span>
+                                <span @class(['flex-1 truncate text-right', 'font-bold text-stone-900' => $m->winner_id === $m->pair1_id, 'text-stone-500' => $m->winner_id !== $m->pair1_id])>{{ $m->pair1->name }}<x-pair-number :pair="$m->pair1" /></span>
                                 @if ($m->status === 'finished')
-                                    <span class="w-12 rounded bg-white px-1 text-center font-bold text-brand-700 ring-1 ring-brand-100">{{ $m->games1 }}-{{ $m->games2 }}</span>
+                                    @can('manage', $tournament)
+                                        <button type="button" wire:click="edit({{ $m->id }})"
+                                                class="w-12 cursor-pointer rounded bg-white px-1 text-center font-bold text-brand-700 ring-1 ring-brand-100 hover:ring-brand-400"
+                                                title="{{ $m->walkover ? 'Sin jugar: cuenta '.$m->games1.'-'.$m->games2.'. ' : '' }}Pulsa para corregir">{{ $m->scoreLabel() }}</button>
+                                    @else
+                                        <span class="w-12 rounded bg-white px-1 text-center font-bold text-brand-700 ring-1 ring-brand-100"
+                                              @if ($m->walkover) title="Sin jugar: cuenta {{ $m->games1 }}-{{ $m->games2 }}" @endif>{{ $m->scoreLabel() }}</span>
+                                    @endcan
                                 @elseif ($m->status === 'playing')
                                     <span class="w-12 animate-pulse rounded bg-ball-300 px-1 text-center font-bold text-stone-800">P{{ $m->court }}</span>
                                 @else
                                     <span class="w-12 text-center text-stone-300">vs</span>
                                 @endif
-                                <span @class(['flex-1 truncate', 'font-bold text-stone-900' => $m->winner_id === $m->pair2_id, 'text-stone-500' => $m->winner_id !== $m->pair2_id])>{{ $m->pair2->name }}</span>
+                                <span @class(['flex-1 truncate', 'font-bold text-stone-900' => $m->winner_id === $m->pair2_id, 'text-stone-500' => $m->winner_id !== $m->pair2_id])>{{ $m->pair2->name }}<x-pair-number :pair="$m->pair2" /></span>
                             </li>
                         @endforeach
                     </ul>

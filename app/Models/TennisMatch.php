@@ -20,13 +20,14 @@ class TennisMatch extends Model
     protected $fillable = [
         'tournament_id', 'stage', 'group_id', 'round', 'bracket_size', 'position', 'third_place',
         'pair1_id', 'pair2_id', 'start_games', 'games1', 'games2', 'winner_id', 'status', 'court',
-        'queue_order', 'postponed', 'started_at', 'finished_at',
+        'queue_order', 'postponed', 'started_at', 'finished_at', 'walkover', 'next_on_court',
     ];
 
     protected function casts(): array
     {
         return [
             'third_place' => 'boolean',
+            'walkover' => 'boolean',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];
@@ -93,6 +94,10 @@ class TennisMatch extends Model
 
     public function scoreLabel(): string
     {
-        return $this->isFinished() ? "{$this->games1}-{$this->games2}" : '';
+        if (! $this->isFinished()) {
+            return '';
+        }
+
+        return $this->walkover ? 'W.O.' : "{$this->games1}-{$this->games2}";
     }
 }

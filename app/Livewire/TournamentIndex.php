@@ -27,11 +27,15 @@ class TournamentIndex extends Component
 
     public function mount(): void
     {
+        $this->authorize('admin');
+
         $this->date = now()->next('Saturday')->toDateString();
     }
 
     public function create()
     {
+        $this->authorize('admin');
+
         $tournament = Tournament::create($this->validate());
 
         return $this->redirectRoute('tournaments.pairs', $tournament, navigate: true);
@@ -39,13 +43,15 @@ class TournamentIndex extends Component
 
     public function delete(Tournament $tournament): void
     {
+        $this->authorize('admin');
+
         $tournament->delete();
     }
 
     public function render()
     {
         return view('livewire.tournament-index', [
-            'tournaments' => Tournament::withCount('pairs')->latest('date')->get(),
+            'tournaments' => Tournament::withCount('pairs')->with('organizers:id,name')->latest('date')->get(),
         ]);
     }
 }

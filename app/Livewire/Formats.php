@@ -15,6 +15,11 @@ class Formats extends Component
 
     public bool $consolationAll = false;
 
+    public function mount(): void
+    {
+        $this->authorize('admin');
+    }
+
     public function render(FormatPlanner $planner)
     {
         $minutes = max(60, $this->hours * 60);

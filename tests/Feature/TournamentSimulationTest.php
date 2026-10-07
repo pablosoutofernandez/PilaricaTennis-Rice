@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Livewire\Bracket;
 use App\Livewire\Pairs;
+use App\Models\Pair;
 use App\Models\TennisMatch;
 use App\Models\Tournament;
+use App\Models\User;
 use App\Services\FormatPlanner;
 use App\Services\TournamentManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -17,6 +19,14 @@ use Tests\TestCase;
 class TournamentSimulationTest extends TestCase
 {
     use RefreshDatabase;
+
+    /** Las pruebas de gestión las hace el administrador; los permisos se prueban en AccessTest. */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->actingAs(User::factory()->admin()->create());
+    }
 
     private function makeTournament(int $pairs): Tournament
     {
@@ -169,10 +179,20 @@ class TournamentSimulationTest extends TestCase
         $this->assertSame(3, $plan['consolation_matches']);
     }
 
-    public function test_tournament_cannot_start_with_markers_that_exceed_the_available_time(): void
+    public function test_tournament_can_start_even_if_the_estimate_exceeds_the_schedule(): void
     {
         $tournament = $this->makeTournament(16);
         $tournament->update(['start_games_groups' => 0, 'start_games_knockout' => 0]);
+
+        app(TournamentManager::class)->start($tournament);
+
+        $this->assertSame(Tournament::GROUPS, $tournament->refresh()->status);
+        $this->assertSame(0, $tournament->start_games_groups);
+    }
+
+    public function test_tournament_cannot_start_without_enough_pairs(): void
+    {
+        $tournament = $this->makeTournament(3);
 
         $this->expectException(ValidationException::class);
 
@@ -192,14 +212,8 @@ class TournamentSimulationTest extends TestCase
             $manager->recordResult($match, $games1, $games2);
         }
 
-        while ($tournament->matches()->where('stage', 'knockout')->where('status', '!=', TennisMatch::FINISHED)->exists()) {
-            $match = $tournament->matches()->where('stage', 'knockout')->where('status', TennisMatch::PLAYING)->first();
-            [$games1, $games2] = $this->randomScore($match->startGames());
-            $manager->recordResult($match, $games1, $games2);
-        }
-
         while ($tournament->fresh()->status !== Tournament::FINISHED) {
-            $match = $tournament->matches()->where('stage', 'consolation')->where('status', TennisMatch::PLAYING)->first();
+            $match = $tournament->matches()->where('status', TennisMatch::PLAYING)->first();
             [$games1, $games2] = $this->randomScore($match->startGames());
             $manager->recordResult($match, $games1, $games2);
         }
@@ -380,6 +394,70 @@ class TournamentSimulationTest extends TestCase
         foreach ($t->groups as $group) {
             $this->assertContains($manager->standings($group)->first()['pair']->id, $pairIds);
         }
+    }
+
+    /**
+     * Grupo único de 4 con sets desde 0-0. Devuelve las parejas en el orden del número.
+     *
+     * @return array{Tournament, array<int, Pair>}
+     */
+    private function startGroupOfFour(): array
+    {
+        $tournament = $this->makeTournament(4);
+        $tournament->update(['start_games_groups' => 0]);
+        app(TournamentManager::class)->start($tournament);
+
+        return [$tournament->refresh(), $tournament->pairs()->orderBy('number')->get()->all()];
+    }
+
+    private function playGroupMatch(Tournament $tournament, Pair $winner, Pair $loser, int $winnerGames, int $loserGames): void
+    {
+        $ids = [$winner->id, $loser->id];
+        $match = $tournament->matches()->where('stage', 'group')->whereIn('pair1_id', $ids)->whereIn('pair2_id', $ids)->sole();
+        [$games1, $games2] = $match->pair1_id === $winner->id ? [$winnerGames, $loserGames] : [$loserGames, $winnerGames];
+
+        app(TournamentManager::class)->recordResult($match, $games1, $games2);
+    }
+
+    public function test_full_tie_between_three_pairs_is_decided_by_the_draw(): void
+    {
+        [$tournament, [$p1, $p2, $p3, $p4]] = $this->startGroupOfFour();
+        foreach ([$p3, $p1, $p2, $p4] as $position => $pair) {
+            $pair->update(['draw_position' => $position + 1]);
+        }
+
+        // Cada una gana una y pierde otra 6-3, y las tres ganan 6-3 a la cuarta: empate a todo.
+        $this->playGroupMatch($tournament, $p1, $p2, 6, 3);
+        $this->playGroupMatch($tournament, $p2, $p3, 6, 3);
+        $this->playGroupMatch($tournament, $p3, $p1, 6, 3);
+        foreach ([$p1, $p2, $p3] as $pair) {
+            $this->playGroupMatch($tournament, $pair, $p4, 6, 3);
+        }
+
+        $order = app(TournamentManager::class)->standings($tournament->groups()->sole())->map(fn ($row) => $row['pair']->id)->all();
+
+        $this->assertSame([$p3->id, $p1->id, $p2->id, $p4->id], $order);
+    }
+
+    public function test_two_pairs_still_tied_after_a_three_way_tie_are_split_by_their_match_before_the_draw(): void
+    {
+        [$tournament, [$p1, $p2, $p3, $p4]] = $this->startGroupOfFour();
+        foreach ([$p3, $p2, $p1, $p4] as $position => $pair) {
+            $pair->update(['draw_position' => $position + 1]);
+        }
+
+        // Las tres primeras con 2 victorias; la 1 con mejor diferencia y la 2 y la 3 iguales en juegos.
+        $this->playGroupMatch($tournament, $p1, $p2, 6, 4);
+        $this->playGroupMatch($tournament, $p2, $p3, 6, 4);
+        $this->playGroupMatch($tournament, $p3, $p1, 6, 4);
+        $this->playGroupMatch($tournament, $p1, $p4, 6, 0);
+        $this->playGroupMatch($tournament, $p2, $p4, 6, 2);
+        $this->playGroupMatch($tournament, $p3, $p4, 6, 2);
+
+        $order = app(TournamentManager::class)->standings($tournament->groups()->sole())->map(fn ($row) => $row['pair']->id)->all();
+
+        // La 2 ganó a la 3, aunque el sorteo favorecía a la 3.
+        $this->assertSame([$p1->id, $p2->id, $p3->id, $p4->id], $order);
     }
 
     public function test_score_validation(): void

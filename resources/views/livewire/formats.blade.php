@@ -1,7 +1,9 @@
 <div>
+    @include('partials.admin-nav')
+
     <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-            <h1 class="text-2xl font-bold text-stone-900">Formatos según el número de parejas</h1>
+            <h2 class="text-xl font-bold text-stone-900">Formatos según el número de parejas</h2>
             <p class="mt-1 max-w-2xl text-sm text-stone-500">
                 Grupos equilibrados y cuadros sin byes, buscando que todas las parejas jueguen lo máximo posible.
                 Los tiempos incluyen {{ $changeover }} min de cambio de pista entre partidos, un {{ config('torneo.organization_margin') * 100 }} % de margen de organización

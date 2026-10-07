@@ -1,6 +1,7 @@
+<div>
+@include('partials.admin-nav')
 <div class="grid gap-6 lg:grid-cols-[1fr_380px]">
     <section>
-        <h1 class="mb-4 text-2xl font-bold text-stone-900">Torneos</h1>
 
         <div class="grid gap-3 sm:grid-cols-2">
             @forelse ($tournaments as $t)
@@ -10,6 +11,7 @@
                         <p class="text-xs font-semibold tracking-wide text-brand-600 uppercase">{{ $t->date->translatedFormat('j M Y') }}</p>
                         <h2 class="mt-1 text-lg font-bold text-stone-900 group-hover:text-brand-700">{{ $t->name }}</h2>
                         <p class="mt-2 text-sm text-stone-500">{{ $t->pairs_count }} parejas · {{ $t->statusLabel() }}</p>
+                        <p class="mt-1 text-xs text-stone-400">Organizan: {{ $t->organizers->pluck('name')->join(', ') ?: 'solo el administrador' }}</p>
                     </a>
                     <button wire:click="delete({{ $t->id }})"
                             wire:confirm="¿Borrar el torneo y todos sus datos?"
@@ -54,4 +56,5 @@
             <button class="btn-primary w-full">Crear torneo</button>
         </form>
     </aside>
+</div>
 </div>

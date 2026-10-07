@@ -39,6 +39,12 @@ return [
     // Número de partidos que retrocede un partido al aplazarlo.
     'postpone_steps' => 2,
 
+    // Administrador que crea el seeder la primera vez. En producción, define ADMIN_PASSWORD.
+    'admin' => [
+        'name' => env('ADMIN_NAME', 'Pablo'),
+        'password' => env('ADMIN_PASSWORD', 'abc123.'),
+    ],
+
     'min_pairs' => 4,
     'max_pairs' => 16,
     'max_courts' => 2,

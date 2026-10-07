@@ -2,13 +2,31 @@
 
 namespace App\Livewire;
 
+use App\Livewire\Concerns\EditsResults;
+use App\Models\TennisMatch;
 use App\Models\Tournament;
 use App\Services\FormatPlanner;
+use Illuminate\Support\Collection;
 use Livewire\Component;
 
 class Bracket extends Component
 {
+    use EditsResults;
+
     public Tournament $tournament;
+
+    /**
+     * Huecos de una ronda en orden de cuadro; null donde una pareja pasa directa (bye),
+     * para que cada partido quede a la altura de los dos que lo alimentan.
+     *
+     * @return array<int, ?TennisMatch>
+     */
+    private function slots(Collection $matches, int $bracketSize): array
+    {
+        $byPosition = $matches->keyBy('position');
+
+        return array_map(fn (int $position) => $byPosition->get($position), range(1, intdiv($bracketSize, 2)));
+    }
 
     public function render()
     {
@@ -29,12 +47,12 @@ class Bracket extends Component
                 'name' => $this->tournament->qualifiers === 6 && $size === 8
                     ? 'Ronda previa'
                     : FormatPlanner::roundName($size),
-                'matches' => $ms->values(),
+                'slots' => $this->slots($ms, $size),
             ]);
         $consolationRounds = $consolationMatches->where('third_place', false)
             ->groupBy('bracket_size')
             ->sortKeysDesc()
-            ->map(fn ($ms, $size) => ['name' => FormatPlanner::roundName($size), 'matches' => $ms->values()]);
+            ->map(fn ($ms, $size) => ['name' => FormatPlanner::roundName($size), 'slots' => $this->slots($ms, $size)]);
 
         $final = $mainMatches->first(fn ($m) => $m->bracket_size === 2 && ! $m->third_place);
         $consolationFinal = $consolationMatches->first(fn ($m) => $m->bracket_size === 2);

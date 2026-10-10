@@ -77,32 +77,38 @@
                         </tbody>
                     </table>
 
-                    <ul class="divide-y divide-brand-50 border-t border-brand-100 bg-brand-50/30 text-xs">
-                        @foreach ($item['matches'] as $m)
-                            @if ($editing === $m->id)
-                                <li>@include('partials.result-form')</li>
-                                @continue
-                            @endif
-                            <li class="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-1.5" wire:key="gm-{{ $m->id }}">
-                                <span @class(['min-w-0 flex-1 text-right leading-snug break-words', 'font-bold text-stone-900' => $m->winner_id === $m->pair1_id, 'text-stone-500' => $m->winner_id !== $m->pair1_id])>{{ $m->pair1->name }}<x-pair-number :pair="$m->pair1" /></span>
-                                @if ($m->status === 'finished')
-                                    @can('manage', $tournament)
-                                        <button type="button" wire:click="edit({{ $m->id }})"
-                                                class="w-12 shrink-0 cursor-pointer rounded bg-white px-1 py-1 text-center font-bold text-brand-700 ring-1 ring-brand-100 hover:ring-brand-400"
-                                                title="{{ $m->walkover ? 'Sin jugar: cuenta '.$m->games1.'-'.$m->games2.'. ' : '' }}Pulsa para corregir">{{ $m->scoreLabel() }}</button>
-                                    @else
-                                        <span class="w-12 shrink-0 rounded bg-white px-1 py-0.5 text-center font-bold text-brand-700 ring-1 ring-brand-100"
-                                              @if ($m->walkover) title="Sin jugar: cuenta {{ $m->games1 }}-{{ $m->games2 }}" @endif>{{ $m->scoreLabel() }}</span>
-                                    @endcan
-                                @elseif ($m->status === 'playing')
-                                    <span class="w-12 shrink-0 animate-pulse rounded bg-ball-300 px-1 py-0.5 text-center font-bold text-stone-800">P{{ $m->court }}</span>
-                                @else
-                                    <span class="w-12 shrink-0 text-center text-stone-300">vs</span>
+                    <div class="border-t border-stone-200 bg-stone-50 p-2.5 sm:p-3">
+                        <ul class="space-y-1.5 text-xs">
+                            @foreach ($item['matches'] as $m)
+                                @if ($editing === $m->id)
+                                    <li class="overflow-hidden rounded-xl bg-white ring-1 ring-brand-300">@include('partials.result-form')</li>
+                                    @continue
                                 @endif
-                                <span @class(['min-w-0 flex-1 leading-snug break-words', 'font-bold text-stone-900' => $m->winner_id === $m->pair2_id, 'text-stone-500' => $m->winner_id !== $m->pair2_id])>{{ $m->pair2->name }}<x-pair-number :pair="$m->pair2" /></span>
-                            </li>
-                        @endforeach
-                    </ul>
+                                <li wire:key="gm-{{ $m->id }}" @class([
+                                    'flex items-center gap-2 rounded-xl bg-white px-2.5 py-2 ring-1',
+                                    'ring-ball-400' => $m->status === 'playing',
+                                    'ring-stone-200' => $m->status !== 'playing',
+                                ])>
+                                    <span @class(['min-w-0 flex-1 text-right leading-snug break-words', 'font-bold text-stone-900' => $m->winner_id === $m->pair1_id, 'text-stone-500' => $m->winner_id !== $m->pair1_id])>{{ $m->pair1->name }}<x-pair-number :pair="$m->pair1" /></span>
+                                    @if ($m->status === 'finished')
+                                        @can('manage', $tournament)
+                                            <button type="button" wire:click="edit({{ $m->id }})"
+                                                    class="w-12 shrink-0 cursor-pointer rounded-lg bg-brand-50 px-1 py-1 text-center font-bold text-brand-700 ring-1 ring-brand-100 hover:ring-brand-400"
+                                                    title="{{ $m->walkover ? 'Sin jugar: cuenta '.$m->games1.'-'.$m->games2.'. ' : '' }}Pulsa para corregir">{{ $m->scoreLabel() }}</button>
+                                        @else
+                                            <span class="w-12 shrink-0 rounded-lg bg-brand-50 px-1 py-1 text-center font-bold text-brand-700"
+                                                  @if ($m->walkover) title="Sin jugar: cuenta {{ $m->games1 }}-{{ $m->games2 }}" @endif>{{ $m->scoreLabel() }}</span>
+                                        @endcan
+                                    @elseif ($m->status === 'playing')
+                                        <span class="w-12 shrink-0 animate-pulse rounded-lg bg-ball-300 px-1 py-1 text-center font-bold text-stone-800" title="Jugando en la pista {{ $m->court }}">P{{ $m->court }}</span>
+                                    @else
+                                        <span class="w-12 shrink-0 text-center text-stone-300">vs</span>
+                                    @endif
+                                    <span @class(['min-w-0 flex-1 leading-snug break-words', 'font-bold text-stone-900' => $m->winner_id === $m->pair2_id, 'text-stone-500' => $m->winner_id !== $m->pair2_id])>{{ $m->pair2->name }}<x-pair-number :pair="$m->pair2" /></span>
+                                </li>
+                            @endforeach
+                        </ul>
+                    </div>
                 </section>
             @endforeach
         </div>

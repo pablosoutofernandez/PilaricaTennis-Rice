@@ -60,3 +60,21 @@
 }
 
 [x-cloak] { display: none !important; }
+
+/* Confeti al descubrir la pareja en la entrada al torneo */
+@keyframes confetti-fall {
+    from { transform: translate3d(0, -10vh, 0) rotate(0deg); }
+    to { transform: translate3d(var(--drift), 110vh, 0) rotate(900deg); }
+}
+.confetti {
+    position: absolute;
+    top: 0;
+    width: 0.55rem;
+    height: 0.9rem;
+    border-radius: 2px;
+    transform: translate3d(0, -10vh, 0);
+    animation: confetti-fall var(--duration) var(--delay) cubic-bezier(0.3, 0.6, 0.6, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+    .confetti { display: none; }
+}

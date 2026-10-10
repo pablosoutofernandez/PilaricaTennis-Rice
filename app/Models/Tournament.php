@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 class Tournament extends Model
 {
@@ -59,6 +60,24 @@ class Tournament extends Model
         return static::whereIn('status', [self::GROUPS, self::KNOCKOUT])->latest('date')->first()
             ?? static::where('status', self::REGISTRATION)->oldest('date')->first()
             ?? static::latest('date')->first();
+    }
+
+    /**
+     * Cada jugador de las parejas en juego con su compañero, en orden alfabético,
+     * para la pantalla de entrada del público.
+     *
+     * @return list<array{name: string, partner: string, number: ?int, group: ?string}>
+     */
+    public function playersWithPartners(): array
+    {
+        return $this->pairs()->whereNull('withdrawn_at')->with('group')->get()
+            ->flatMap(fn (Pair $pair) => [
+                ['name' => $pair->player1, 'partner' => $pair->player2, 'number' => $pair->number, 'group' => $pair->group?->name],
+                ['name' => $pair->player2, 'partner' => $pair->player1, 'number' => $pair->number, 'group' => $pair->group?->name],
+            ])
+            ->sortBy(fn (array $player) => Str::lower(Str::ascii($player['name'])))
+            ->values()
+            ->all();
     }
 
     /** Usuarios que pueden organizar este torneo (además del administrador). */

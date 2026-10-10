@@ -64,5 +64,11 @@
             </div>
         </nav>
     @endif
+
+    @guest
+        @if ($navTournament && $navTournament->status !== \App\Models\Tournament::FINISHED && ! request()->routeIs('login', 'register'))
+            @include('partials.tournament-entry', ['tournament' => $navTournament])
+        @endif
+    @endguest
 </body>
 </html>

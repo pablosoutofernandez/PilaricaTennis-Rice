@@ -4,6 +4,7 @@ namespace App\Livewire;
 
 use App\Models\TennisMatch;
 use App\Models\Tournament;
+use App\Services\TournamentManager;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -25,7 +26,7 @@ class Dashboard extends Component
     }
 
     /**
-     * @return array{playing: Collection, nextOnCourt: Collection, latest: Collection, played: int, total: int, groups: int, champion: mixed, organizers: Collection, estimate: ?array}
+     * @return array{playing: Collection, nextUp: Collection, latest: Collection, played: int, total: int, groups: int, champion: mixed, organizers: Collection, estimate: ?array}
      */
     private function live(Tournament $tournament): array
     {
@@ -34,7 +35,7 @@ class Dashboard extends Component
 
         return [
             'playing' => $matches->where('status', TennisMatch::PLAYING)->keyBy('court'),
-            'nextOnCourt' => $matches->where('status', TennisMatch::PENDING)->whereNotNull('next_on_court')->keyBy('next_on_court'),
+            'nextUp' => app(TournamentManager::class)->upcoming($tournament)->take(2),
             'latest' => $matches->where('status', TennisMatch::FINISHED)->sortByDesc('finished_at')->take(5)->values(),
             'played' => $matches->where('status', TennisMatch::FINISHED)->count(),
             'total' => $matches->count(),

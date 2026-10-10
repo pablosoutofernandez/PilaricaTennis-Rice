@@ -97,32 +97,26 @@ class MatchBoardTest extends TestCase
         return $t->refresh();
     }
 
-    public function test_each_court_keeps_its_next_match_and_gets_a_new_one_when_it_starts(): void
+    public function test_the_two_next_matches_go_to_whichever_court_frees_first(): void
     {
         $this->travelTo('2026-10-10 09:00');
         $t = $this->startTournament(8);
+        $playing = $t->matches()->where('status', TennisMatch::PLAYING)->get()->keyBy('court');
 
         $board = Livewire::test(MatchBoard::class, ['tournament' => $t]);
-        $nextOnCourt = $board->viewData('nextOnCourt');
-        [$nextOne, $nextTwo] = [$nextOnCourt[1], $nextOnCourt[2]];
-        $firstUnassigned = $board->viewData('afterNext')->first();
-
-        // Ninguna pareja avisada en una pista está jugando en la otra.
-        $playing = $t->matches()->where('status', TennisMatch::PLAYING)->get()->keyBy('court');
-        $this->assertEmpty(array_intersect([$nextOne->pair1_id, $nextOne->pair2_id], [$playing[2]->pair1_id, $playing[2]->pair2_id]));
-        $this->assertEmpty(array_intersect([$nextTwo->pair1_id, $nextTwo->pair2_id], [$playing[1]->pair1_id, $playing[1]->pair2_id]));
+        [$first, $second] = $board->viewData('nextUp')->all();
         // 45′ de partido + cambio con el 10 % de margen.
-        $this->assertSame('09:49', $board->viewData('eta')[$nextOne->id]->format('H:i'));
-        $board->assertSee('Siguiente')->assertDontSee('Resultados');
+        $this->assertSame('09:49', $board->viewData('eta')[$first->id]->format('H:i'));
+        $this->assertNotContains($first->id, $board->viewData('later')->pluck('id'));
+        $board->assertSee('1.º siguiente')->assertSee('2.º siguiente')->assertDontSee('Resultados');
 
-        // Acaba antes la pista 2: entra su siguiente y el primero sin pista pasa a ser el nuevo siguiente de la 2.
+        // Acaba antes la pista 2: entra el primero de los siguientes y el segundo pasa a ser el primero.
         $this->travelTo('2026-10-10 09:20');
         app(TournamentManager::class)->recordResult($playing[2], 6, 2);
 
-        $this->assertSame(2, $nextTwo->refresh()->court);
-        $this->assertSame(TennisMatch::PLAYING, $nextTwo->status);
-        $this->assertSame(1, $nextOne->refresh()->next_on_court);
-        $this->assertSame(2, $firstUnassigned->refresh()->next_on_court);
+        $this->assertSame(TennisMatch::PLAYING, $first->refresh()->status);
+        $this->assertSame(2, $first->court);
+        $this->assertSame($second->id, Livewire::test(MatchBoard::class, ['tournament' => $t])->viewData('nextUp')->first()->id);
     }
 
     public function test_results_are_corrected_from_groups_and_bracket(): void

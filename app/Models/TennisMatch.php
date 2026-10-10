@@ -20,7 +20,7 @@ class TennisMatch extends Model
     protected $fillable = [
         'tournament_id', 'stage', 'group_id', 'round', 'bracket_size', 'position', 'third_place',
         'pair1_id', 'pair2_id', 'start_games', 'games1', 'games2', 'winner_id', 'status', 'court',
-        'queue_order', 'postponed', 'started_at', 'finished_at', 'walkover', 'next_on_court',
+        'queue_order', 'postponed', 'started_at', 'finished_at', 'walkover',
     ];
 
     protected function casts(): array

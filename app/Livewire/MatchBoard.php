@@ -83,15 +83,17 @@ class MatchBoard extends Component
         $upcoming = $manager->upcoming($t);
         $schedule = $this->schedule($playing, $upcoming, $estimator->currentPace($t));
 
+        // Por orden de hora prevista: los dos primeros son los siguientes, entren en la pista que entren.
+        $queue = $upcoming->sortBy(fn (TennisMatch $match) => [$schedule[$match->id] ?? now()->addYear(), $match->queue_order])->values();
+
         $waiting = $t->matches()->where('status', TennisMatch::PENDING)
             ->where(fn ($q) => $q->whereNull('pair1_id')->orWhereNull('pair2_id'))->count();
 
         return view('livewire.match-board', [
             'playing' => $playing,
             'upcoming' => $upcoming,
-            'nextOnCourt' => $upcoming->whereNotNull('next_on_court')->keyBy('next_on_court'),
-            'afterNext' => $upcoming->whereNull('next_on_court')
-                ->sortBy(fn (TennisMatch $match) => [$schedule[$match->id] ?? now(), $match->queue_order])->values(),
+            'nextUp' => $queue->take(2),
+            'later' => $queue->slice(2)->values(),
             'busy' => $manager->busyPairIds($t),
             'eta' => $schedule,
             'waiting' => $waiting,
@@ -127,9 +129,9 @@ class MatchBoard extends Component
     }
 
     /**
-     * Hora aproximada de cada partido de la cola. El siguiente de cada pista entra en ella;
-     * el resto, igual que al ocupar pistas, en la que antes quede libre el primero cuyas
-     * parejas no estén jugando. La duración sigue el ritmo real del torneo.
+     * Hora aproximada de cada partido de la cola: igual que al ocupar pistas, en la que antes
+     * quede libre entra el primero cuyas parejas no estén jugando. La duración sigue el ritmo
+     * real del torneo.
      *
      * @param  Collection<int, TennisMatch>  $playing  partidos en juego por pista
      * @param  Collection<int, TennisMatch>  $upcoming
@@ -157,20 +159,6 @@ class MatchBoard extends Component
         $queue = $upcoming->values()->all();
         $schedule = [];
         $startAt = fn (Carbon $freeAt, TennisMatch $match) => collect([$freeAt, $pairFreeAt[$match->pair1_id] ?? null, $pairFreeAt[$match->pair2_id] ?? null])->filter()->max();
-
-        // Los avisados como siguientes entran en su pista en cuanto quede libre.
-        asort($courtFreeAt);
-        foreach (array_keys($courtFreeAt) as $court) {
-            $index = collect($queue)->search(fn (TennisMatch $match) => $match->next_on_court === $court);
-            if ($index === false) {
-                continue;
-            }
-
-            $match = $queue[$index];
-            array_splice($queue, $index, 1);
-            $schedule[$match->id] = $startAt($courtFreeAt[$court], $match);
-            $courtFreeAt[$court] = $pairFreeAt[$match->pair1_id] = $pairFreeAt[$match->pair2_id] = $schedule[$match->id]->copy()->addSeconds($slot($match));
-        }
 
         while ($queue) {
             asort($courtFreeAt);

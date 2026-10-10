@@ -340,7 +340,7 @@ class ContingencyTest extends TestCase
             }
 
             if ($tournament->refresh()->status !== Tournament::FINISHED) {
-                $this->assertNextMatchesAreMarked($tournament, $step);
+                $this->assertNoCourtIsIdle($tournament, $step);
                 $this->assertNotNull($this->playNext($tournament), "Atasco en el paso {$step} ({$tournament->status})");
             }
         }
@@ -356,19 +356,14 @@ class ContingencyTest extends TestCase
         }
     }
 
-    /** Cada pista abierta tiene como mucho un siguiente, y si quedan partidos listos alguna lo tiene. */
-    private function assertNextMatchesAreMarked(Tournament $tournament, int $step): void
+    /** Ninguna pista abierta se queda libre mientras haya un partido que pueda jugarse en ella. */
+    private function assertNoCourtIsIdle(Tournament $tournament, int $step): void
     {
-        $marked = $tournament->matches()->whereNotNull('next_on_court')->get();
+        $manager = app(TournamentManager::class);
+        $freeCourts = array_diff($tournament->openCourts(), $tournament->matches()->where('status', TennisMatch::PLAYING)->pluck('court')->all());
+        $busy = $manager->busyPairIds($tournament);
+        $canStart = $manager->upcoming($tournament)->contains(fn (TennisMatch $match) => $manager->isReady($match, $busy));
 
-        $this->assertTrue($marked->every(fn (TennisMatch $match) => $match->status === TennisMatch::PENDING));
-        $this->assertSame($marked->count(), $marked->pluck('next_on_court')->unique()->count());
-        $this->assertEmpty(array_diff($marked->pluck('next_on_court')->all(), $tournament->openCourts()));
-
-        $readyToPlay = $tournament->matches()->where('status', TennisMatch::PENDING)
-            ->whereNotNull('pair1_id')->whereNotNull('pair2_id')->exists();
-        if ($readyToPlay && $tournament->openCourts()) {
-            $this->assertNotEmpty($marked, "Ninguna pista tiene siguiente en el paso {$step}");
-        }
+        $this->assertFalse($freeCourts && $canStart, "Pista libre con partidos listos en el paso {$step}");
     }
 }

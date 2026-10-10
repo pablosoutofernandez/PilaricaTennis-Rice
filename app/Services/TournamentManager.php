@@ -525,7 +525,6 @@ class TournamentManager
                 'winner_id' => $winner,
                 'status' => TennisMatch::FINISHED,
                 'walkover' => false,
-                'next_on_court' => null,
                 'finished_at' => $match->finished_at ?? now(),
             ]);
 
@@ -805,13 +804,11 @@ class TournamentManager
             }
 
             $tournament->update(['closed_courts' => array_values(array_unique([...$tournament->closed_courts ?? [], $court]))]);
-            $tournament->matches()->where('next_on_court', $court)->update(['next_on_court' => null]);
 
-            // Las parejas ya estaban en pista: pasan a ser las siguientes en otra pista abierta.
-            $target = $tournament->openCourts()[0] ?? null;
-            if ($interrupted && $target) {
-                $tournament->matches()->where('next_on_court', $target)->update(['next_on_court' => null]);
-                $interrupted->update(['next_on_court' => $target]);
+            // Las parejas ya estaban en pista: su partido entra en la primera que quede libre.
+            if ($interrupted) {
+                $first = (int) $tournament->matches()->where('status', TennisMatch::PENDING)->min('queue_order');
+                $interrupted->update(['queue_order' => min($interrupted->queue_order, $first - 1)]);
             }
         });
 
@@ -870,7 +867,6 @@ class TournamentManager
             'winner_id' => $winner,
             'status' => TennisMatch::FINISHED,
             'walkover' => true,
-            'next_on_court' => null,
             'start_games' => $start,
             'finished_at' => now(),
         ]);
@@ -920,54 +916,14 @@ class TournamentManager
             $busy = $this->busyPairIds($tournament);
             $ready = $this->upcoming($tournament)->filter(fn ($m) => $this->isReady($m, $busy));
 
-            // El avisado como siguiente en esta pista; si aún no puede, uno sin pista y, si no, el de otra pista.
-            $next = $ready->firstWhere('next_on_court', $court)
-                ?? $ready->first(fn (TennisMatch $match) => $match->next_on_court === null)
-                ?? $ready->first();
+            // Los siguientes no tienen pista fija: entra el primero de la cola que pueda jugar.
+            $next = $ready->first();
 
             if ($next) {
                 $this->startOnCourt($next, $court);
             }
         }
 
-        $this->assignNextMatches($tournament);
-    }
-
-    /**
-     * Mientras queden partidos, cada pista abierta tiene uno avisado como siguiente. Se evita
-     * avisar a una pareja que está jugando en otra pista o que ya es la siguiente en otra.
-     */
-    private function assignNextMatches(Tournament $tournament): void
-    {
-        $openCourts = $tournament->openCourts();
-        $tournament->matches()->whereNotNull('next_on_court')
-            ->where(fn ($query) => $query->where('status', '!=', TennisMatch::PENDING)->orWhereNotIn('next_on_court', $openCourts))
-            ->update(['next_on_court' => null]);
-
-        $pending = $tournament->matches()->where('status', TennisMatch::PENDING)
-            ->whereNotNull('pair1_id')->whereNotNull('pair2_id')
-            ->orderBy('queue_order')->get();
-        $playing = $tournament->matches()->where('status', TennisMatch::PLAYING)->get()->keyBy('court');
-
-        // Primero la pista que antes empezó su partido: es la que antes quedará libre.
-        $courts = collect($openCourts)->sortBy(fn (int $court) => $playing->get($court)?->started_at?->timestamp ?? 0);
-
-        foreach ($courts as $court) {
-            if ($pending->contains('next_on_court', $court)) {
-                continue;
-            }
-
-            $unavailable = $playing->except($court)->concat($pending->whereNotNull('next_on_court'))
-                ->flatMap(fn (TennisMatch $match) => [$match->pair1_id, $match->pair2_id])->all();
-            $candidates = $pending->whereNull('next_on_court');
-            $next = $candidates->first(fn (TennisMatch $match) => $this->isReady($match, $unavailable)) ?? $candidates->first();
-
-            if (! $next) {
-                return;
-            }
-
-            $next->update(['next_on_court' => $court]);
-        }
     }
 
     /** IDs de las parejas que están ahora mismo en pista. */
@@ -1013,7 +969,6 @@ class TournamentManager
             $match->update([
                 'status' => TennisMatch::PENDING,
                 'court' => null,
-                'next_on_court' => null,
                 'started_at' => null,
                 'start_games' => null,
                 'postponed' => $match->postponed + 1,
@@ -1057,7 +1012,6 @@ class TournamentManager
         }
 
         $this->startOnCourt($match, $court);
-        $this->assignNextMatches($tournament);
     }
 
     private function startOnCourt(TennisMatch $match, int $court): void
@@ -1067,7 +1021,6 @@ class TournamentManager
         $match->update([
             'status' => TennisMatch::PLAYING,
             'court' => $court,
-            'next_on_court' => null,
             'started_at' => now(),
             'start_games' => (int) ($match->isGroup() ? $tournament->start_games_groups : $tournament->start_games_knockout),
         ]);

@@ -110,10 +110,7 @@
                     <h2 class="mb-3 text-sm font-bold tracking-wide text-brand-700 uppercase">En pista ahora</h2>
                     <div class="grid gap-4 sm:grid-cols-2">
                         @foreach (range(1, $featured->courts) as $court)
-                            @php
-                                $m = $live['playing']->get($court);
-                                $next = $live['nextOnCourt']->get($court);
-                            @endphp
+                            @php $m = $live['playing']->get($court); @endphp
                             <div class="card overflow-hidden" wire:key="dash-court-{{ $court }}-{{ $m?->id }}">
                                 <div class="flex items-center justify-between bg-stone-900 px-4 py-2 text-white">
                                     <span class="font-black tracking-wide">PISTA {{ $court }}</span>
@@ -132,16 +129,22 @@
                                         <p class="py-4 text-sm text-stone-400">Sin partido ahora mismo</p>
                                     @endif
                                 </div>
-                                @if ($next)
-                                    <div class="border-t-2 border-ball-300 bg-ball-100 px-4 py-3 text-stone-800">
-                                        <p class="text-xs font-black tracking-wide text-ball-600 uppercase">Siguiente</p>
-                                        <p class="mt-1 leading-snug font-bold break-words">{{ $next->pair1->name }}<x-pair-number :pair="$next->pair1" /> <span class="font-normal text-stone-400">vs</span></p>
-                                        <p class="leading-snug font-bold break-words">{{ $next->pair2->name }}<x-pair-number :pair="$next->pair2" /></p>
-                                    </div>
-                                @endif
                             </div>
                         @endforeach
                     </div>
+
+                    @if ($live['nextUp']->isNotEmpty())
+                        <h2 class="mt-6 mb-3 text-sm font-bold tracking-wide text-brand-700 uppercase">Siguientes</h2>
+                        <div class="grid gap-3 sm:grid-cols-2">
+                            @foreach ($live['nextUp'] as $next)
+                                <div class="card border-ball-300 bg-ball-100 px-4 py-3 text-stone-800" wire:key="dash-next-{{ $next->id }}">
+                                    <p class="text-xs font-black tracking-wide text-ball-600 uppercase">{{ $loop->first ? '1.º' : '2.º' }} siguiente</p>
+                                    <p class="mt-1 leading-snug font-bold break-words">{{ $next->pair1->name }}<x-pair-number :pair="$next->pair1" /> <span class="font-normal text-stone-400">vs</span></p>
+                                    <p class="leading-snug font-bold break-words">{{ $next->pair2->name }}<x-pair-number :pair="$next->pair2" /></p>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
                 </section>
 
                 {{-- Últimos resultados --}}

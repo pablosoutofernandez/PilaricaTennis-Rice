@@ -69,7 +69,7 @@
             </p>
         @endif
 
-        {{-- Pistas: lo que se juega ahora y el siguiente de cada una --}}
+        {{-- Pistas: lo que se juega ahora --}}
         <div class="mb-6 grid gap-4 md:mb-8 md:grid-cols-2">
             @foreach (range(1, $tournament->courts) as $court)
                 @php
@@ -148,46 +148,55 @@
                         </div>
                     @endif
 
-                    {{-- Siguiente en esta pista: lo más consultado, siempre entero --}}
-                    @unless ($closed || $tournament->status === 'finished')
-                        <div class="border-t-2 border-ball-300 bg-ball-100 px-4 py-3">
-                            @if ($next = $nextOnCourt->get($court))
-                                <div wire:key="next-{{ $court }}-{{ $next->id }}">
-                                    <div class="flex items-baseline justify-between gap-2">
-                                        <span class="text-xs font-black tracking-wide text-ball-600 uppercase">Siguiente</span>
-                                        @if (isset($eta[$next->id]))
-                                            <span class="text-base font-bold text-stone-900">≈ {{ $eta[$next->id]->format('H:i') }}</span>
-                                        @endif
-                                    </div>
-                                    <p class="text-xs text-stone-500">
-                                        {{ $next->stageLabel() }}
-                                        @if ($next->postponed) · <span class="text-brand-600">aplazado ×{{ $next->postponed }}</span> @endif
-                                        @if (array_intersect([$next->pair1_id, $next->pair2_id], array_diff($busy, $m ? [$m->pair1_id, $m->pair2_id] : []))) · <span class="text-brand-700">una pareja está jugando en otra pista</span> @endif
-                                    </p>
-                                    <p class="mt-1.5 text-base leading-snug font-bold break-words text-stone-900">{{ $next->pair1->name }}<x-pair-number :pair="$next->pair1" /></p>
-                                    <p class="text-xs text-stone-400">vs</p>
-                                    <p class="text-base leading-snug font-bold break-words text-stone-900">{{ $next->pair2->name }}<x-pair-number :pair="$next->pair2" /></p>
-                                    @if ($canManage)
-                                        <div class="mt-2 flex justify-end gap-1">
-                                            <button wire:click="postpone({{ $next->id }})" class="btn-ghost px-2.5 py-1.5 text-xs" title="Retrasar {{ config('torneo.postpone_steps') }} puestos">Aplazar</button>
-                                            @include('partials.walkover-menu', ['m' => $next, 'buttonClass' => 'btn-ghost px-2.5 py-1.5 text-xs'])
-                                        </div>
-                                    @endif
-                                </div>
-                            @else
-                                <p class="text-sm text-stone-500">Sin siguiente partido{{ $waiting ? ' hasta que se decidan los rivales del cuadro' : '' }}.</p>
-                            @endif
-                        </div>
-                    @endunless
                 </div>
             @endforeach
         </div>
 
-        {{-- Resto de la cola: cuando una pista empieza a jugar su siguiente, el primero de aquí pasa a ser su nuevo siguiente --}}
+        {{-- Los dos siguientes: entran en la primera pista que quede libre. Lo más consultado, siempre entero. --}}
+        @unless ($tournament->status === 'finished')
+            <section class="mb-6 md:mb-8">
+                <div class="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">
+                    <h2 class="text-sm font-bold tracking-wide text-brand-700 uppercase">Siguientes</h2>
+                    <p class="text-xs text-stone-500">En la primera pista que quede libre</p>
+                </div>
+                @if ($nextUp->isEmpty())
+                    <p class="card px-4 py-5 text-center text-sm text-stone-500">Sin siguientes partidos{{ $waiting ? ' hasta que se decidan los rivales del cuadro' : '' }}.</p>
+                @else
+                    <div class="grid gap-3 md:grid-cols-2 md:gap-4">
+                        @foreach ($nextUp as $next)
+                            <div class="card border-ball-300 bg-ball-100 px-4 py-3" wire:key="next-{{ $next->id }}">
+                                <div class="flex items-baseline justify-between gap-2">
+                                    <span class="text-xs font-black tracking-wide text-ball-600 uppercase">{{ $loop->first ? '1.º' : '2.º' }} siguiente</span>
+                                    @if (isset($eta[$next->id]))
+                                        <span class="text-base font-bold text-stone-900">≈ {{ $eta[$next->id]->format('H:i') }}</span>
+                                    @endif
+                                </div>
+                                <p class="text-xs text-stone-500">
+                                    {{ $next->stageLabel() }}
+                                    @if ($next->postponed) · <span class="text-brand-600">aplazado ×{{ $next->postponed }}</span> @endif
+                                    @if (array_intersect([$next->pair1_id, $next->pair2_id], $busy)) · <span class="text-brand-700">esperando a que acabe su partido</span> @endif
+                                </p>
+                                <p class="mt-1.5 text-base leading-snug font-bold break-words text-stone-900">{{ $next->pair1->name }}<x-pair-number :pair="$next->pair1" /></p>
+                                <p class="text-xs text-stone-400">vs</p>
+                                <p class="text-base leading-snug font-bold break-words text-stone-900">{{ $next->pair2->name }}<x-pair-number :pair="$next->pair2" /></p>
+                                @if ($canManage)
+                                    <div class="mt-2 flex justify-end gap-1">
+                                        <button wire:click="postpone({{ $next->id }})" class="btn-ghost px-2.5 py-1.5 text-xs" title="Retrasar {{ config('torneo.postpone_steps') }} puestos">Aplazar</button>
+                                        @include('partials.walkover-menu', ['m' => $next, 'buttonClass' => 'btn-ghost px-2.5 py-1.5 text-xs'])
+                                    </div>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+            </section>
+        @endunless
+
+        {{-- Resto de la cola --}}
         <section>
             <h2 class="mb-3 text-sm font-bold tracking-wide text-brand-700 uppercase">Después</h2>
             <div class="card divide-y divide-brand-50">
-                @forelse ($afterNext as $u)
+                @forelse ($later as $u)
                     @php $ready = ! in_array($u->pair1_id, $busy) && ! in_array($u->pair2_id, $busy); @endphp
                     <div class="flex gap-3 px-4 py-3" wire:key="up-{{ $u->id }}">
                         <span class="w-12 shrink-0 pt-0.5 text-sm font-bold text-brand-700">{{ isset($eta[$u->id]) ? '≈ '.$eta[$u->id]->format('H:i') : '–' }}</span>

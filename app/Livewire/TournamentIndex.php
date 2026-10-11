@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\Tournament;
+use App\Services\TournamentManager;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
@@ -25,6 +26,9 @@ class TournamentIndex extends Component
     #[Validate('required|integer|min:1|max:2')]
     public int $courts = 2;
 
+    /** Torneo al que se le acaban de reiniciar los tiempos, para confirmarlo en su tarjeta. */
+    public ?int $clockRestarted = null;
+
     public function mount(): void
     {
         $this->authorize('admin');
@@ -46,6 +50,15 @@ class TournamentIndex extends Component
         $this->authorize('admin');
 
         $tournament->delete();
+    }
+
+    public function restartClock(Tournament $tournament, TournamentManager $manager): void
+    {
+        $this->authorize('admin');
+
+        $manager->restartClock($tournament);
+
+        $this->clockRestarted = $tournament->id;
     }
 
     public function render()

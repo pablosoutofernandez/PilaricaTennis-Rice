@@ -29,7 +29,7 @@
 
     <div class="mb-4 flex flex-wrap gap-2 text-xs">
         @foreach ($durations as $start => $min)
-            <span class="badge bg-white text-stone-600 ring-1 ring-brand-100">Empezando {{ $start }}-{{ $start }} ≈ {{ $min }} min/partido + {{ $changeover }} de cambio</span>
+            <span class="badge bg-white text-stone-600 ring-1 ring-brand-100">{{ $start === \App\Models\TennisMatch::TWO_SETS ? 'A 2 sets + súper tie-break' : 'Empezando '.$start.'-'.$start }} ≈ {{ $min }} min/partido + {{ $changeover }} de cambio</span>
         @endforeach
     </div>
 
@@ -44,6 +44,7 @@
                     <th class="px-4 py-3">Consolación</th>
                     <th class="px-4 py-3">Cómo funciona la consolación</th>
                     <th class="px-4 py-3 text-center">Set desde</th>
+                    <th class="px-4 py-3 text-center">Caben 2 sets + súper TB</th>
                     <th class="px-4 py-3 text-center">Partidos</th>
                     <th class="px-4 py-3 text-center">Mín. por pareja</th>
                     <th class="px-4 py-3 text-center">Duración</th>
@@ -74,6 +75,15 @@
                             </span>
                             @if ($r['start_games_knockout'] !== $r['start_games'])
                                 <span class="block text-xs text-stone-500">final {{ $r['start_games_knockout'] }}-{{ $r['start_games_knockout'] }}</span>
+                            @endif
+                        </td>
+                        <td class="px-4 py-2.5 text-center">
+                            @if ($r['two_sets'] === 'all')
+                                <span class="badge bg-ball-300 text-stone-800">Todo el torneo</span>
+                            @elseif ($r['two_sets'] === 'knockout')
+                                <span class="badge bg-brand-100 text-brand-700">Fase final</span>
+                            @else
+                                <span class="text-stone-300">—</span>
                             @endif
                         </td>
                         <td class="px-4 py-2.5 text-center">{{ $r['group_matches'] }} + {{ $r['knockout_matches'] }} + {{ $r['consolation_matches'] }}</td>

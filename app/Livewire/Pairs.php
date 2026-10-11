@@ -7,6 +7,7 @@ use App\Models\Tournament;
 use App\Services\FormatPlanner;
 use App\Services\TournamentManager;
 use Carbon\Carbon;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
@@ -195,8 +196,8 @@ class Pairs extends Component
             'start_time' => 'required|date_format:H:i',
             'end_time' => 'required|date_format:H:i|after:start_time',
             'courts' => 'required|integer|min:1|max:2',
-            'startGroups' => 'nullable|in:0,1,2,3,4',
-            'startKnockout' => 'nullable|in:0,1,2,3,4',
+            'startGroups' => ['nullable', Rule::in(array_keys(config('torneo.match_minutes')))],
+            'startKnockout' => ['nullable', Rule::in(array_keys(config('torneo.match_minutes')))],
             'consolationAll' => 'boolean',
         ]);
 

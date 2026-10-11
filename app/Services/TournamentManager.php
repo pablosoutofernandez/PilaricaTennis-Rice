@@ -46,6 +46,25 @@ class TournamentManager
     }
 
     /**
+     * El reloj del torneo vuelve a cero: los partidos en pista vuelven a la cola, sin perder
+     * su sitio, para que quien organiza los llame a mano cuando empiecen de verdad, y los ya
+     * terminados dejan de contar para el ritmo y la media. Grupos y resultados no se tocan.
+     */
+    public function restartClock(Tournament $tournament): void
+    {
+        if (! in_array($tournament->status, [Tournament::GROUPS, Tournament::KNOCKOUT], true)) {
+            throw ValidationException::withMessages([
+                'clock' => 'Solo se pueden reiniciar los tiempos de un torneo en juego.',
+            ]);
+        }
+
+        DB::transaction(function () use ($tournament) {
+            $tournament->matches()->where('status', TennisMatch::PLAYING)->get()->each(fn (TennisMatch $match) => $this->returnToQueue($match));
+            $tournament->matches()->where('status', TennisMatch::FINISHED)->update(['started_at' => null]);
+        });
+    }
+
+    /**
      * Cabezas de serie repartidos en "serpiente" (A B C C B A...), el resto al azar.
      *
      * @return Collection<Group>
@@ -499,18 +518,79 @@ class TournamentManager
         return 'Resultado no válido para un set (6-0 … 6-4, 7-5 o 7-6).';
     }
 
+    /**
+     * Marcador a 2 sets + súper tie-break: dos sets normales y, si quedan 1-1,
+     * un súper tie-break a 10 puntos con 2 de diferencia.
+     *
+     * @param  list<array{int, int}>  $sets
+     */
+    public function validateSets(array $sets): ?string
+    {
+        if (count($sets) < 2) {
+            return 'Introduce los juegos de los dos sets.';
+        }
+
+        foreach (array_slice($sets, 0, 2) as $index => [$first, $second]) {
+            if ($error = $this->validateScore($first, $second, 0)) {
+                return 'Set '.($index + 1).': '.lcfirst($error);
+            }
+        }
+
+        $split = ($sets[0][0] > $sets[0][1]) !== ($sets[1][0] > $sets[1][1]);
+        if (! $split) {
+            return count($sets) === 2 ? null : 'Con 2-0 en sets no se juega el súper tie-break.';
+        }
+        if (count($sets) !== 3) {
+            return 'Con 1-1 en sets falta el súper tie-break.';
+        }
+
+        [$first, $second] = $sets[2];
+        $win = max($first, $second);
+        $difference = abs($first - $second);
+        if ($win < 10 || $difference < 2 || ($win > 10 && $difference !== 2)) {
+            return 'Súper tie-break no válido: a 10 puntos con 2 de diferencia (10-8, 11-9…).';
+        }
+
+        return null;
+    }
+
     public function recordResult(TennisMatch $match, int $g1, int $g2): void
     {
+        $this->recordSets($match, [[$g1, $g2]]);
+    }
+
+    /**
+     * Guarda el resultado set a set. En los partidos de un set hay uno solo. A 2 sets,
+     * el súper tie-break suma un juego a quien lo gana, para la diferencia de juegos.
+     *
+     * @param  list<array{int, int}>  $sets
+     */
+    public function recordSets(TennisMatch $match, array $sets): void
+    {
         $tournament = $match->tournament;
+        $twoSets = $match->isTwoSets();
 
         if (! $match->hasBothPairs()) {
             throw ValidationException::withMessages(['score' => 'El partido aún no tiene las dos parejas.']);
         }
-        if ($error = $this->validateScore($g1, $g2, $match->startGames())) {
+        $error = $twoSets ? $this->validateSets($sets) : $this->validateScore($sets[0][0], $sets[0][1], $match->startGames());
+        if ($error) {
             throw ValidationException::withMessages(['score' => $error]);
         }
 
-        $winner = $g1 > $g2 ? $match->pair1_id : $match->pair2_id;
+        $setsWon = [0, 0];
+        $games = [0, 0];
+        foreach ($sets as $index => [$first, $second]) {
+            $setsWon[$first > $second ? 0 : 1]++;
+            if ($index < 2) {
+                $games[0] += $first;
+                $games[1] += $second;
+            } else {
+                $games[$first > $second ? 0 : 1]++;
+            }
+        }
+        [$g1, $g2] = $games;
+        $winner = $setsWon[0] > $setsWon[1] ? $match->pair1_id : $match->pair2_id;
         $wasFinished = $match->isFinished();
         $winnerChanged = $wasFinished && $match->winner_id !== $winner;
 
@@ -518,10 +598,11 @@ class TournamentManager
             $this->assertEditable($match, $winnerChanged);
         }
 
-        DB::transaction(function () use ($match, $g1, $g2, $winner, $wasFinished, $winnerChanged, $tournament) {
+        DB::transaction(function () use ($match, $g1, $g2, $sets, $twoSets, $winner, $wasFinished, $winnerChanged, $tournament) {
             $match->update([
                 'games1' => $g1,
                 'games2' => $g2,
+                'sets' => $twoSets ? $sets : null,
                 'winner_id' => $winner,
                 'status' => TennisMatch::FINISHED,
                 'walkover' => false,
@@ -713,6 +794,7 @@ class TournamentManager
                     'status' => TennisMatch::PENDING,
                     'games1' => null,
                     'games2' => null,
+                    'sets' => null,
                     'winner_id' => null,
                     'walkover' => false,
                     'court' => null,
@@ -854,16 +936,21 @@ class TournamentManager
     /**
      * W.O.: 6 juegos contra el marcador inicial +1 (6-1 empezando 0-0), para no dar
      * tanta diferencia de juegos sin jugar. Empezando 4-4 sería 6-5, que no existe: 7-5.
+     * A 2 sets, 6-1 6-1.
      */
     private function settleWalkover(TennisMatch $match, int $absentPairId): void
     {
         $start = $match->start_games ?? $match->startGames();
         $winner = $absentPairId === $match->pair1_id ? $match->pair2_id : $match->pair1_id;
-        [$winnerGames, $loserGames] = self::walkoverScore($start);
+        $twoSets = $start === TennisMatch::TWO_SETS;
+        [$winnerGames, $loserGames] = self::walkoverScore($twoSets ? 0 : $start);
+        $set = $winner === $match->pair1_id ? [$winnerGames, $loserGames] : [$loserGames, $winnerGames];
+        $sets = $twoSets ? [$set, $set] : [$set];
 
         $match->update([
-            'games1' => $winner === $match->pair1_id ? $winnerGames : $loserGames,
-            'games2' => $winner === $match->pair2_id ? $winnerGames : $loserGames,
+            'games1' => array_sum(array_column($sets, 0)),
+            'games2' => array_sum(array_column($sets, 1)),
+            'sets' => $twoSets ? $sets : null,
             'winner_id' => $winner,
             'status' => TennisMatch::FINISHED,
             'walkover' => true,

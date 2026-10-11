@@ -8,10 +8,12 @@ return [
     |--------------------------------------------------------------------------
     |
     | Minutos de juego (con calentamiento) que ocupa una pista por partido.
-    | La clave es el marcador inicial: 0 => 0-0, 1 => 1-1, ...
+    | La clave es el marcador inicial: 0 => 0-0, 1 => 1-1, ... y -1, partido
+    | a 2 sets + súper tie-break (solo si se elige y cabe en el horario).
     |
     */
     'match_minutes' => [
+        -1 => 80,
         0 => 40,
         1 => 33,
         2 => 26,

@@ -68,7 +68,7 @@ class MatchBoard extends Component
     {
         $this->authorize('manage', $this->tournament);
 
-        abort_unless(in_array($stage, ['groups', 'knockout']) && $games >= 0 && $games <= 4, 422);
+        abort_unless(in_array($stage, ['groups', 'knockout']) && array_key_exists($games, config('torneo.match_minutes')), 422);
         $this->tournament->update(["start_games_{$stage}" => $games]);
     }
 

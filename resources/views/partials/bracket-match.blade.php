@@ -5,7 +5,7 @@
     @if ($editing === $m->id)
         @include('partials.result-form')
     @else
-    @foreach ([[$m->pair1, $m->games1, $m->pair1_id], [$m->pair2, $m->games2, $m->pair2_id]] as [$pair, $games, $pairId])
+    @foreach ([[$m->pair1, $m->games1, $m->pair1_id, 0], [$m->pair2, $m->games2, $m->pair2_id, 1]] as [$pair, $games, $pairId, $side])
         <div @class([
                 'flex items-center gap-2 px-3 py-2',
                 'border-t border-brand-50' => $loop->last,
@@ -17,6 +17,10 @@
                 @if ($m->winner_id !== $pairId)
                     <span class="text-xs font-bold text-red-600">W.O.</span>
                 @endif
+            @elseif ($m->status === 'finished' && $m->sets)
+                @foreach ($m->sets as $set)
+                    <span @class(['w-5 text-center font-bold', 'text-brand-700' => $set[$side] > $set[1 - $side], 'text-stone-400' => $set[$side] < $set[1 - $side]])>{{ $set[$side] }}</span>
+                @endforeach
             @elseif ($m->status === 'finished')
                 <span class="w-6 text-center font-bold text-brand-700">{{ $games }}</span>
             @endif

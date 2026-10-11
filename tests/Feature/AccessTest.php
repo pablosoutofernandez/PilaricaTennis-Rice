@@ -196,7 +196,7 @@ class AccessTest extends TestCase
             ->assertSee('¿a cuánto se empieza?')
             ->viewData('knockoutStartOptions');
 
-        $this->assertSame([0, 1, 2, 3, 4], array_keys($options));
+        $this->assertSame([-1, 0, 1, 2, 3, 4], array_keys($options));
         // Empezar más avanzado acorta el día.
         $this->assertTrue($options[4]->lessThan($options[0]));
     }

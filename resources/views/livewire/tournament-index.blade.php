@@ -13,9 +13,19 @@
                         <p class="mt-2 text-sm text-stone-500">{{ $t->pairs_count }} parejas · {{ $t->statusLabel() }}</p>
                         <p class="mt-1 text-xs text-stone-400">Organizan: {{ $t->organizers->pluck('name')->join(', ') ?: 'solo el administrador' }}</p>
                     </a>
-                    <button wire:click="delete({{ $t->id }})"
-                            wire:confirm="¿Borrar el torneo y todos sus datos?"
-                            class="relative mt-3 cursor-pointer text-xs text-stone-400 hover:text-red-600">Borrar</button>
+                    <div class="relative mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                        @if (in_array($t->status, [\App\Models\Tournament::GROUPS, \App\Models\Tournament::KNOCKOUT]))
+                            <button wire:click="restartClock({{ $t->id }})"
+                                    wire:confirm="Las pistas quedan libres y los partidos que estaban en ellas vuelven los primeros a la cola: en Partidos pulsa «Llamar» cuando empiecen de verdad. La media de tiempo vuelve a empezar. Grupos y resultados no cambian. ¿Reiniciar los tiempos?"
+                                    class="cursor-pointer font-semibold text-brand-600 hover:text-brand-800">Reiniciar tiempos</button>
+                        @endif
+                        <button wire:click="delete({{ $t->id }})"
+                                wire:confirm="¿Borrar el torneo y todos sus datos?"
+                                class="cursor-pointer text-stone-400 hover:text-red-600">Borrar</button>
+                        @if ($clockRestarted === $t->id)
+                            <a href="{{ route('tournaments.matches', $t) }}" class="font-semibold text-brand-700 hover:underline">✓ Tiempos reiniciados · Llamar a los primeros partidos →</a>
+                        @endif
+                    </div>
                 </div>
             @empty
                 <div class="card col-span-full p-10 text-center text-stone-500">

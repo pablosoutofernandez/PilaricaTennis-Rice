@@ -135,6 +135,11 @@
                                 @if ($proposal['start_games_knockout'] !== $proposal['start_games'])
                                     <span class="text-xs text-stone-500">· cuadros {{ $proposal['start_games_knockout'] }}-{{ $proposal['start_games_knockout'] }}</span>
                                 @endif
+                                @if ($proposal['two_sets'])
+                                    <span class="mt-1 block text-xs font-medium text-brand-700">
+                                        Cabe jugar a 2 sets + súper tie-break {{ $proposal['two_sets'] === 'all' ? 'todo el torneo' : 'la fase final' }}
+                                    </span>
+                                @endif
                             </dd>
                         </div>
                         <div class="bg-white px-5 py-3">
@@ -175,8 +180,8 @@
                         <label class="label" for="sg">Partido de grupos desde</label>
                         <select id="sg" wire:model.live="startGroups" class="input">
                             <option value="">Automático</option>
-                            @foreach (range(0, 4) as $g)
-                                <option value="{{ $g }}">{{ $g }}-{{ $g }}</option>
+                            @foreach (array_keys(config('torneo.match_minutes')) as $g)
+                                <option value="{{ $g }}">{{ \App\Services\FormatPlanner::startLabel($g) }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -184,8 +189,8 @@
                         <label class="label" for="sk">Cuadros desde</label>
                         <select id="sk" wire:model.live="startKnockout" class="input">
                             <option value="">Automático</option>
-                            @foreach (range(0, 4) as $g)
-                                <option value="{{ $g }}">{{ $g }}-{{ $g }}</option>
+                            @foreach (array_keys(config('torneo.match_minutes')) as $g)
+                                <option value="{{ $g }}">{{ \App\Services\FormatPlanner::startLabel($g) }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -202,7 +207,7 @@
                         @endif
                     </span>
                 </label>
-                <p class="text-xs text-stone-500">Partidos de un set · duración aproximada: @foreach (config('torneo.match_minutes') as $s => $m){{ $s }}-{{ $s }}: {{ $m }}′{{ $loop->last ? '' : ' · ' }}@endforeach · +{{ config('torneo.changeover_minutes') }}′ de cambio de pista · +{{ config('torneo.organization_margin') * 100 }} % de margen de organización · {{ config('torneo.lunch_break_minutes') }}′ de pistas vacías mientras se turnan para comer si la jornada pasa de {{ intdiv(config('torneo.lunch_break_after_minutes'), 60) }} h</p>
+                <p class="text-xs text-stone-500">Duración aproximada por partido: @foreach (config('torneo.match_minutes') as $s => $m){{ \App\Services\FormatPlanner::startLabel($s) }}: {{ $m }}′{{ $loop->last ? '' : ' · ' }}@endforeach · +{{ config('torneo.changeover_minutes') }}′ de cambio de pista · +{{ config('torneo.organization_margin') * 100 }} % de margen de organización · {{ config('torneo.lunch_break_minutes') }}′ de pistas vacías mientras se turnan para comer si la jornada pasa de {{ intdiv(config('torneo.lunch_break_after_minutes'), 60) }} h</p>
             </div>
 
             @endif

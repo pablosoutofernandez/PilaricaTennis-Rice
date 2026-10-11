@@ -9,7 +9,12 @@ use Illuminate\Validation\ValidationException;
 /** Introducir y corregir resultados desde cualquier pantalla del torneo. */
 trait EditsResults
 {
-    /** @var array<int, array{g1: string|int|null, g2: string|int|null}> marcadores en edición, por partido */
+    /**
+     * Marcadores en edición, por partido: juegos del set o, a 2 sets, cada set
+     * (el tercero es el súper tie-break).
+     *
+     * @var array<int, array{g1?: string|int|null, g2?: string|int|null, sets?: array<int, array<int, string|int|null>>}>
+     */
     public array $scores = [];
 
     public ?int $editing = null;
@@ -19,8 +24,6 @@ trait EditsResults
         $this->authorize('manage', $this->tournament);
 
         $match = $this->findMatch($matchId);
-        $g1 = $this->scores[$matchId]['g1'] ?? null;
-        $g2 = $this->scores[$matchId]['g2'] ?? null;
 
         // Desde otro móvil ya se ha guardado el resultado mientras se tecleaba este.
         if ($match->isFinished() && $this->editing !== $matchId) {
@@ -30,14 +33,15 @@ trait EditsResults
             return;
         }
 
-        if (! is_numeric($g1) || ! is_numeric($g2)) {
-            $this->addError("score.$matchId", 'Introduce los juegos de las dos parejas.');
+        $sets = $this->enteredSets($match);
+        if ($sets === null) {
+            $this->addError("score.$matchId", $match->isTwoSets() ? 'Introduce los juegos de las dos parejas en cada set.' : 'Introduce los juegos de las dos parejas.');
 
             return;
         }
 
         try {
-            $manager->recordResult($match, (int) $g1, (int) $g2);
+            $manager->recordSets($match, $sets);
         } catch (ValidationException $e) {
             $this->addError("score.$matchId", collect($e->errors())->flatten()->first());
 
@@ -58,13 +62,33 @@ trait EditsResults
 
         $this->resetErrorBag();
         $this->editing = $matchId;
-        $this->scores[$matchId] = ['g1' => $match->games1, 'g2' => $match->games2];
+        $this->scores[$matchId] = $match->sets ? ['sets' => $match->sets] : ['g1' => $match->games1, 'g2' => $match->games2];
     }
 
     public function cancelEdit(): void
     {
         unset($this->scores[$this->editing]);
         $this->editing = null;
+    }
+
+    /**
+     * Sets tecleados, o null si falta algún número. El súper tie-break vacío no cuenta.
+     *
+     * @return list<array{int, int}>|null
+     */
+    private function enteredSets(TennisMatch $match): ?array
+    {
+        $score = $this->scores[$match->id] ?? [];
+        $sets = $match->isTwoSets()
+            ? collect(range(0, 2))->map(fn (int $set) => [$score['sets'][$set][0] ?? null, $score['sets'][$set][1] ?? null])
+                ->reject(fn (array $set, int $index) => $index === 2 && blank($set[0]) && blank($set[1]))
+            : collect([[$score['g1'] ?? null, $score['g2'] ?? null]]);
+
+        if ($sets->flatten()->contains(fn ($games) => ! is_numeric($games))) {
+            return null;
+        }
+
+        return $sets->map(fn (array $set) => [(int) $set[0], (int) $set[1]])->values()->all();
     }
 
     protected function findMatch(int $id): TennisMatch

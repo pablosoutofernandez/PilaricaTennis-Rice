@@ -20,13 +20,13 @@
                 <div class="flex flex-wrap items-center gap-2 text-sm">
                     <span class="text-stone-500">Grupos desde</span>
                     <div class="flex overflow-hidden rounded-xl ring-1 ring-brand-200">
-                        @foreach (range(0, 4) as $g)
+                        @foreach (array_keys(config('torneo.match_minutes')) as $g)
                             <button wire:click="setStartGames('groups', {{ $g }})"
                                     @class([
                                         'cursor-pointer px-2.5 py-1.5 text-xs font-semibold',
                                         'bg-brand-500 text-white' => (int) $tournament->start_games_groups === $g,
                                         'bg-white text-stone-500 hover:bg-brand-50' => (int) $tournament->start_games_groups !== $g,
-                                    ])>{{ $g }}-{{ $g }}</button>
+                                    ])>{{ $g === \App\Models\TennisMatch::TWO_SETS ? '2 sets' : $g.'-'.$g }}</button>
                         @endforeach
                     </div>
                 </div>
@@ -43,17 +43,17 @@
                     <h2 class="font-bold text-stone-900">Fase final: ¿a cuánto se empieza?</h2>
                     <p class="text-xs text-stone-500">Hora de fin estimada con cada marcador</p>
                 </div>
-                <div class="grid grid-cols-5 gap-1.5 md:gap-2">
+                <div class="grid grid-cols-3 gap-1.5 sm:grid-cols-6 md:gap-2">
                     @foreach ($knockoutStartOptions as $g => $finishAt)
                         @php $isCurrent = (int) $tournament->start_games_knockout === $g; @endphp
                         <button wire:click="setStartGames('knockout', {{ $g }})"
-                                @if (! $isCurrent) wire:confirm="Los partidos de la fase final que faltan empezarán {{ $g }}-{{ $g }}. ¿Cambiar?" @endif
+                                @if (! $isCurrent) wire:confirm="Los partidos de la fase final que faltan {{ $g === \App\Models\TennisMatch::TWO_SETS ? 'se jugarán a 2 sets + súper tie-break' : 'empezarán '.$g.'-'.$g }}. ¿Cambiar?" @endif
                                 @class([
                                     'cursor-pointer rounded-xl px-1 py-2 text-center ring-1 transition',
                                     'bg-brand-500 text-white ring-brand-500' => $isCurrent,
                                     'bg-white text-stone-700 ring-brand-200 hover:ring-brand-400' => ! $isCurrent,
                                 ])>
-                            <span class="block text-sm font-bold">{{ $g }}-{{ $g }}</span>
+                            <span class="block text-sm font-bold">{{ $g === \App\Models\TennisMatch::TWO_SETS ? '2 sets + STB' : $g.'-'.$g }}</span>
                             <span @class(['block text-[11px] md:text-xs', 'text-white/80' => $isCurrent, 'text-stone-500' => ! $isCurrent])><span class="hidden md:inline">fin </span>≈ {{ $finishAt->format('H:i') }}</span>
                         </button>
                     @endforeach
@@ -114,17 +114,11 @@
                     @elseif ($m)
                         <form wire:submit="save({{ $m->id }})" class="flex-1 p-4">
                             <p class="mb-3 text-center text-xs text-stone-500">
-                                {{ $m->stageLabel() }} · desde las {{ $m->started_at->format('H:i') }} · set desde
-                                <span class="badge bg-ball-300 text-stone-800">{{ $m->startGames() }}-{{ $m->startGames() }}</span>
+                                {{ $m->stageLabel() }} · desde las {{ $m->started_at->format('H:i') }} ·
+                                @unless ($m->isTwoSets()) set desde @endunless
+                                <span class="badge bg-ball-300 text-stone-800">{{ \App\Services\FormatPlanner::startLabel($m->startGames()) }}</span>
                             </p>
-                            <div class="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2">
-                                <span class="leading-snug font-semibold break-words">{{ $m->pair1->name }}<x-pair-number :pair="$m->pair1" /></span>
-                                <input type="number" min="0" max="7" inputmode="numeric" class="score-input"
-                                       wire:model.live="scores.{{ $m->id }}.g1" aria-label="Juegos {{ $m->pair1->name }}">
-                                <span class="leading-snug font-semibold break-words">{{ $m->pair2->name }}<x-pair-number :pair="$m->pair2" /></span>
-                                <input type="number" min="0" max="7" inputmode="numeric" class="score-input"
-                                       wire:model.live="scores.{{ $m->id }}.g2" aria-label="Juegos {{ $m->pair2->name }}">
-                            </div>
+                            @include('partials.score-fields', ['live' => true])
                             @error("score.{$m->id}") <p class="mt-2 text-sm text-red-600">{{ $message }}</p> @enderror
                             <div class="mt-4 flex gap-2">
                                 <button class="btn-primary flex-1 py-2.5">Guardar resultado</button>

@@ -2,11 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\TournamentIndex;
 use App\Models\TennisMatch;
 use App\Models\Tournament;
 use App\Models\User;
 use App\Services\TournamentManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 class FinishEstimateTest extends TestCase
@@ -83,6 +85,37 @@ class FinishEstimateTest extends TestCase
         $this->actingAs(User::factory()->admin()->create())
             ->get(route('tournaments.matches', $tournament))
             ->assertSee('Terminó a las');
+    }
+
+    public function test_admin_restarts_the_clock_and_the_first_matches_are_called_by_hand(): void
+    {
+        $this->travelTo('2026-10-10 09:00');
+        $tournament = $this->startFourPairTournament();
+        $this->travelTo('2026-10-10 10:00');
+        $finished = $tournament->matches()->where('status', TennisMatch::PLAYING)->first();
+        app(TournamentManager::class)->recordResult($finished, 6, 2);
+
+        $this->travelTo('2026-10-10 10:30');
+        Livewire::actingAs(User::factory()->admin()->create())
+            ->test(TournamentIndex::class)
+            ->call('restartClock', $tournament->id)
+            ->assertSee('Tiempos reiniciados');
+
+        $this->assertFalse($tournament->matches()->where('status', TennisMatch::PLAYING)->exists());
+        $first = app(TournamentManager::class)->upcoming($tournament)->first();
+        $this->assertNull($first->started_at);
+
+        // Hasta que alguien los llama, las pistas salen vacías.
+        $this->get('/')->assertSeeInOrder(['PISTA 1', 'Sin partido ahora mismo', 'PISTA 2', 'Sin partido ahora mismo']);
+
+        // Quien organiza llama a mano a los primeros partidos y el reloj cuenta desde entonces.
+        $this->travelTo('2026-10-10 10:40');
+        app(TournamentManager::class)->sendToCourt($first, 1);
+        $this->assertSame('10:40', $first->refresh()->started_at->format('H:i'));
+        $this->assertFalse($tournament->matches()->where('court', 2)->where('status', TennisMatch::PLAYING)->exists());
+        // El resultado se queda, pero ya no cuenta para la media.
+        $this->assertSame([6, 2], [$finished->refresh()->games1, $finished->games2]);
+        $this->assertFalse($tournament->refresh()->finishEstimate()['average_is_real']);
     }
 
     public function test_no_estimate_during_registration(): void

@@ -93,10 +93,10 @@
                                     @if ($m->status === 'finished')
                                         @can('manage', $tournament)
                                             <button type="button" wire:click="edit({{ $m->id }})"
-                                                    class="w-12 shrink-0 cursor-pointer rounded-lg bg-brand-50 px-1 py-1 text-center font-bold text-brand-700 ring-1 ring-brand-100 hover:ring-brand-400"
+                                                    class="min-w-12 shrink-0 cursor-pointer rounded-lg bg-brand-50 px-1.5 py-1 whitespace-nowrap text-center font-bold text-brand-700 ring-1 ring-brand-100 hover:ring-brand-400"
                                                     title="{{ $m->walkover ? 'Sin jugar: cuenta '.$m->games1.'-'.$m->games2.'. ' : '' }}Pulsa para corregir">{{ $m->scoreLabel() }}</button>
                                         @else
-                                            <span class="w-12 shrink-0 rounded-lg bg-brand-50 px-1 py-1 text-center font-bold text-brand-700"
+                                            <span class="min-w-12 shrink-0 rounded-lg bg-brand-50 px-1.5 py-1 text-center whitespace-nowrap font-bold text-brand-700"
                                                   @if ($m->walkover) title="Sin jugar: cuenta {{ $m->games1 }}-{{ $m->games2 }}" @endif>{{ $m->scoreLabel() }}</span>
                                         @endcan
                                     @elseif ($m->status === 'playing')

@@ -15,11 +15,14 @@ class TennisMatch extends Model
 
     public const FINISHED = 'finished';
 
+    /** Marcador inicial que indica un partido a 2 sets + súper tie-break. */
+    public const TWO_SETS = -1;
+
     protected $table = 'matches';
 
     protected $fillable = [
         'tournament_id', 'stage', 'group_id', 'round', 'bracket_size', 'position', 'third_place',
-        'pair1_id', 'pair2_id', 'start_games', 'games1', 'games2', 'winner_id', 'status', 'court',
+        'pair1_id', 'pair2_id', 'start_games', 'games1', 'games2', 'sets', 'winner_id', 'status', 'court',
         'queue_order', 'postponed', 'started_at', 'finished_at', 'walkover',
     ];
 
@@ -28,6 +31,7 @@ class TennisMatch extends Model
         return [
             'third_place' => 'boolean',
             'walkover' => 'boolean',
+            'sets' => 'array',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];
@@ -75,6 +79,11 @@ class TennisMatch extends Model
             : $this->tournament->start_games_knockout);
     }
 
+    public function isTwoSets(): bool
+    {
+        return $this->startGames() === self::TWO_SETS;
+    }
+
     public function stageLabel(): string
     {
         if ($this->isGroup()) {
@@ -98,6 +107,12 @@ class TennisMatch extends Model
             return '';
         }
 
-        return $this->walkover ? 'W.O.' : "{$this->games1}-{$this->games2}";
+        if ($this->walkover) {
+            return 'W.O.';
+        }
+
+        return $this->sets
+            ? implode(' ', array_map(fn (array $set) => "{$set[0]}-{$set[1]}", $this->sets))
+            : "{$this->games1}-{$this->games2}";
     }
 }

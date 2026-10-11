@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\TennisMatch;
 use InvalidArgumentException;
 
 /**
@@ -15,11 +16,14 @@ use InvalidArgumentException;
  *
  * Entre los dos modos de consolación se recomienda el que lleva a todas al objetivo
  * de partidos y, a igualdad, el que más minutos de juego asegura a la que menos juega.
+ *
+ * Se proponen siempre partidos de un set; si sobra tiempo, se indica si caben partidos
+ * a 2 sets + súper tie-break en la fase final o en todo el torneo, para quien los quiera.
  */
 class FormatPlanner
 {
     /**
-     * @return array{pairs: int, group_sizes: int[], qualifiers: int, consolation_pairs: int, qualification: string, consolation_description: string, start_games: int, start_games_knockout: int, group_matches: int, knockout_matches: int, consolation_matches: int, total_matches: int, min_matches_per_pair: int, turns: int, group_turns: int, elimination_turns: int, estimated_minutes: int, fits: bool, recommended_consolation_all: ?bool, warning: ?string}
+     * @return array{pairs: int, group_sizes: int[], qualifiers: int, consolation_pairs: int, qualification: string, consolation_description: string, start_games: int, start_games_knockout: int, two_sets: ?string, group_matches: int, knockout_matches: int, consolation_matches: int, total_matches: int, min_matches_per_pair: int, turns: int, group_turns: int, elimination_turns: int, estimated_minutes: int, fits: bool, recommended_consolation_all: ?bool, warning: ?string}
      */
     public function plan(int $pairs, int $minutesAvailable, int $courts = 2, bool $consolationAll = false): array
     {
@@ -43,6 +47,7 @@ class FormatPlanner
             default => null,
         };
         $result['warning'] = $this->warning($result['fits'], $result['start_games']);
+        $result['two_sets'] = $this->twoSetsFit($result, $minutesAvailable);
         unset($result['score'], $result['guaranteed_minutes']);
 
         return $result;
@@ -61,9 +66,25 @@ class FormatPlanner
         return $options[0];
     }
 
+    /**
+     * Dónde caben partidos a 2 sets + súper tie-break: 'all' (todo el torneo),
+     * 'knockout' (solo la fase final) o null.
+     */
+    private function twoSetsFit(array $plan, int $minutesAvailable): ?string
+    {
+        $twoSets = TennisMatch::TWO_SETS;
+
+        return match (true) {
+            $this->minutes($plan['group_turns'], $plan['elimination_turns'], $twoSets, $twoSets) <= $minutesAvailable => 'all',
+            $this->minutes($plan['group_turns'], $plan['elimination_turns'], $plan['start_games'], $twoSets) <= $minutesAvailable => 'knockout',
+            default => null,
+        };
+    }
+
     private function evaluate(array $groupSizes, int $pairs, int $qualifiers, int $minutesAvailable, int $courts, bool $consolationAll): array
     {
-        $minutesTable = config('torneo.match_minutes');
+        // La propuesta es siempre de partidos de un set.
+        $minutesTable = array_filter(config('torneo.match_minutes'), fn (int $start) => $start >= 0, ARRAY_FILTER_USE_KEY);
         $maxPreferred = config('torneo.max_preferred_start');
 
         $groupMatches = (int) array_sum(array_map(fn ($size) => $size * ($size - 1) / 2, $groupSizes));
@@ -380,7 +401,7 @@ class FormatPlanner
 
     public static function startLabel(int $games): string
     {
-        return "{$games}-{$games}";
+        return $games === TennisMatch::TWO_SETS ? '2 sets + súper tie-break' : "{$games}-{$games}";
     }
 
     private function warning(bool $fits, int $start): ?string
